@@ -9,7 +9,7 @@
 | Windows | `ORACLE.EXE` | 接続元 DB サーバー |
 | Linux / UNIX | `oracle@host (TNS V1-V3)` | 接続元 DB サーバー |
 
-このため、実際にどのシステム（端末・プログラム）が使っているかは監視対象側だけでは分かりません。OpenDbSession はこれらを **「DB Linkの可能性」** として表示します。
+このため、実際にどのシステム（端末・プログラム）が使っているかは監視対象側だけでは分かりません。OracleSessionHistory はこれらを **「DB Linkの可能性」** として表示します。
 
 なお、Windows の Oracle では全プロセスが ORACLE.EXE のスレッドとして動くため、`ORACLE.EXE (J000)` のように括弧内のプロセス名で種別を判定しています（下表）。
 

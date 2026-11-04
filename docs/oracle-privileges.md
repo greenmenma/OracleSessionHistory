@@ -42,4 +42,4 @@ GRANT SELECT ON sys.dba_synonyms TO monitor;   -- 無い場合は all_synonyms
 - 1 回のポーリングで実行する SQL は 8 本程度で、いずれも動的パフォーマンスビューの参照です。
 - SQL テキストは、セッションが現在／直前に実行している `sql_id` に絞って `gv$sqlarea` から取得します。
 - セッション数が非常に多い（数千以上）環境では、取得間隔を 10〜30 秒に広げるか、「SQL テキストを取得する」をオフにしてください。
-- 監視用セッション自身は結果から除外し、`MODULE=OpenDbSession` を設定しています。
+- 監視用セッション自身は結果から除外し、`MODULE=OracleSessionHistory` を設定しています。

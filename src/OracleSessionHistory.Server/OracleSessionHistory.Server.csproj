@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\OracleSessionHistory.Core\OracleSessionHistory.Core.csproj" />
+    <ProjectReference Include="..\OracleSessionHistory.ServiceDefaults\OracleSessionHistory.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OracleSessionHistory.Tests" />
+  </ItemGroup>
+
+</Project>

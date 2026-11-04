@@ -9,11 +9,11 @@ description: Oracle からのセッション収集（gv$session の SQL、プロ
 
 | ファイル | 内容 |
 |---|---|
-| `src/OpenDbSession.Core/Collection/Oracle/OracleSessionSource.cs` | gv$session 等の SQL と ObservedSession への変換 |
-| `src/OpenDbSession.Core/Tracking/ProgramClassifier.cs` | PROGRAM から種別（DB Link の可能性・Jnnn 等）を判定 |
-| `src/OpenDbSession.Core/Tracking/SessionTracker.cs` | 既存行の更新・新規追加・切断検知（純粋関数） |
-| `src/OpenDbSession.Core/DbLinks/OracleDbLinkInspector.cs` | 接続元 DB の DB Link 一覧・利用セッションの検索 |
-| `src/OpenDbSession.Core/Services/CollectionService.cs` | 取得 → 追跡 → 保存 |
+| `src/OracleSessionHistory.Core/Collection/Oracle/OracleSessionSource.cs` | gv$session 等の SQL と ObservedSession への変換 |
+| `src/OracleSessionHistory.Core/Tracking/ProgramClassifier.cs` | PROGRAM から種別（DB Link の可能性・Jnnn 等）を判定 |
+| `src/OracleSessionHistory.Core/Tracking/SessionTracker.cs` | 既存行の更新・新規追加・切断検知（純粋関数） |
+| `src/OracleSessionHistory.Core/DbLinks/OracleDbLinkInspector.cs` | 接続元 DB の DB Link 一覧・利用セッションの検索 |
+| `src/OracleSessionHistory.Core/Services/CollectionService.cs` | 取得 → 追跡 → 保存 |
 | `docs/oracle-privileges.md` | 必要な権限 |
 
 ## 守ること
@@ -39,5 +39,5 @@ description: Oracle からのセッション収集（gv$session の SQL、プロ
 
 1. `ISessionSource` を実装（失敗時は例外）。必要なら `IDbLinkInspector` も実装。
 2. `SourceProviders` に定数を追加し `All` に含める。
-3. `CoreServiceCollectionExtensions.AddOpenDbSessionCore` に登録。
+3. `CoreServiceCollectionExtensions.AddOracleSessionHistoryCore` に登録。
 4. `docs/architecture.md` の Provider 一覧を更新。

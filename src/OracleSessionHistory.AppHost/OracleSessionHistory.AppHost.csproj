@@ -1,0 +1,19 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.6.4">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <UserSecretsId>oraclesessionhistory-apphost-6b1f3c2e</UserSecretsId>
+    <!-- Aspire CLI バンドルは使わず NuGet パッケージのオーケストレーターで起動する -->
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.JavaScript" Version="13.6.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OracleSessionHistory.Batch\OracleSessionHistory.Batch.csproj" />
+    <ProjectReference Include="..\OracleSessionHistory.Server\OracleSessionHistory.Server.csproj" />
+  </ItemGroup>
+
+</Project>

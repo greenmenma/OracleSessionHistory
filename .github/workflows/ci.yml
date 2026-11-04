@@ -20,9 +20,9 @@ jobs:
         with:
           node-version: '22'
       - name: .NET ビルド・テスト
-        run: dotnet test src/OpenDbSession.sln
+        run: dotnet test src/OracleSessionHistory.sln
       - name: Client ビルド
-        working-directory: src/OpenDbSession.Client
+        working-directory: src/OracleSessionHistory.Client
         run: |
           npm ci
           npm run build

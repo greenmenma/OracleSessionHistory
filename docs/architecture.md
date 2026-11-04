@@ -4,7 +4,7 @@
 
 ```
 ┌────────────┐  gv$session 等   ┌──────────────────────┐
-│ 監視対象    │ ◀──────────────── │ OpenDbSession.Batch  │
+│ 監視対象    │ ◀──────────────── │ OracleSessionHistory.Batch  │
 │ Oracle      │   （数秒間隔）    │  CollectorHost       │
 │ (基幹公開DB)│                   │   └ 監視対象ごとのループ│
 └────────────┘                   │  CollectionService   │
@@ -17,7 +17,7 @@
                                    └─────────▲─────────┘
                                               │ 読み取り / 設定の書き込み
 ┌──────────────────────┐   /api     ┌────────┴──────────┐
-│ OpenDbSession.Client │ ─────────▶ │ OpenDbSession.Server│
+│ OracleSessionHistory.Client │ ─────────▶ │ OracleSessionHistory.Server│
 │ React + TypeScript   │            │ Minimal API         │
 └──────────────────────┘            └─────────────────────┘
 ```

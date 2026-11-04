@@ -11,7 +11,7 @@ node_modules/
 dist/
 
 # Client のビルド出力（Server から配信）
-src/OpenDbSession.Server/wwwroot/
+src/OracleSessionHistory.Server/wwwroot/
 
 # ローカルデータ（SQLite）
 .data/

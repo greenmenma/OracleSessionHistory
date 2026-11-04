@@ -11,9 +11,9 @@
 
 ### Visual Studio
 
-1. `src/OpenDbSession.sln` を開く
-2. 初回のみ `src/OpenDbSession.Client` で `npm install` を実行（開発者 PowerShell 等）
-3. スタートアッププロジェクトを `OpenDbSession.AppHost` にして F5
+1. `src/OracleSessionHistory.sln` を開く
+2. 初回のみ `src/OracleSessionHistory.Client` で `npm install` を実行（開発者 PowerShell 等）
+3. スタートアッププロジェクトを `OracleSessionHistory.AppHost` にして F5
 4. ブラウザで Aspire ダッシュボードが開くので、`client` のエンドポイントをクリック
 
 Batch・Server にはブレークポイントがそのまま効きます（AppHost から子プロセスとしてデバッグ接続されます）。
@@ -21,25 +21,25 @@ Batch・Server にはブレークポイントがそのまま効きます（AppHo
 ### VS Code
 
 1. C# Dev Kit 拡張をインストール
-2. `src/OpenDbSession.AppHost/AppHost.cs` を開いて「実行とデバッグ」→ C# → `OpenDbSession.AppHost`
+2. `src/OracleSessionHistory.AppHost/AppHost.cs` を開いて「実行とデバッグ」→ C# → `OracleSessionHistory.AppHost`
 
 ### コマンドライン
 
 ```powershell
-cd src\OpenDbSession.Client; npm install; cd ..\..
-dotnet run --project src\OpenDbSession.AppHost
+cd src\OracleSessionHistory.Client; npm install; cd ..\..
+dotnet run --project src\OracleSessionHistory.AppHost
 ```
 
 ### Aspire を使わずに個別に起動する
 
 ```powershell
-$env:ConnectionStrings__AppDb = "Data Source=C:\work\opendbsession\opendbsession.db"
-dotnet run --project src\OpenDbSession.Server     # http://localhost:5292
-dotnet run --project src\OpenDbSession.Batch      # 別ターミナルで同じ環境変数を設定
-cd src\OpenDbSession.Client; npm run dev           # http://localhost:5173
+$env:ConnectionStrings__AppDb = "Data Source=C:\work\oraclesessionhistory\oraclesessionhistory.db"
+dotnet run --project src\OracleSessionHistory.Server     # http://localhost:5292
+dotnet run --project src\OracleSessionHistory.Batch      # 別ターミナルで同じ環境変数を設定
+cd src\OracleSessionHistory.Client; npm run dev           # http://localhost:5173
 ```
 
-`ConnectionStrings__AppDb` を指定しない場合、Batch・Server とも `%LOCALAPPDATA%\OpenDbSession\opendbsession.db` を使います。
+`ConnectionStrings__AppDb` を指定しない場合、Batch・Server とも `%LOCALAPPDATA%\OracleSessionHistory\oraclesessionhistory.db` を使います。
 
 ## 監視対象の登録
 
@@ -61,8 +61,8 @@ User Id=MONITOR;Password=xxxx;Data Source=(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(H
 ### Server（IIS または Kestrel）
 
 ```powershell
-cd src\OpenDbSession.Client; npm ci; npm run build   # Server\wwwroot に出力
-dotnet publish src\OpenDbSession.Server -c Release -o C:\apps\OpenDbSession.Server
+cd src\OracleSessionHistory.Client; npm ci; npm run build   # Server\wwwroot に出力
+dotnet publish src\OracleSessionHistory.Server -c Release -o C:\apps\OracleSessionHistory.Server
 ```
 
 `appsettings.json` の `ConnectionStrings:AppDb` に履歴 DB のパスを指定します。
@@ -70,9 +70,9 @@ dotnet publish src\OpenDbSession.Server -c Release -o C:\apps\OpenDbSession.Serv
 ### Batch（Windows サービス）
 
 ```powershell
-dotnet publish src\OpenDbSession.Batch -c Release -o C:\apps\OpenDbSession.Batch
-sc.exe create OpenDbSession.Batch binPath= "C:\apps\OpenDbSession.Batch\OpenDbSession.Batch.exe" start= auto
-sc.exe start OpenDbSession.Batch
+dotnet publish src\OracleSessionHistory.Batch -c Release -o C:\apps\OracleSessionHistory.Batch
+sc.exe create OracleSessionHistory.Batch binPath= "C:\apps\OracleSessionHistory.Batch\OracleSessionHistory.Batch.exe" start= auto
+sc.exe start OracleSessionHistory.Batch
 ```
 
 Server と **同じ** `ConnectionStrings:AppDb` を設定してください。Batch は Linux の systemd でも動作します。

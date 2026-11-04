@@ -5,9 +5,9 @@
 ## ビルド・テスト
 
 ```bash
-dotnet build src/OpenDbSession.sln
-dotnet test src/OpenDbSession.sln
-cd src/OpenDbSession.Client && npm run typecheck
+dotnet build src/OracleSessionHistory.sln
+dotnet test src/OracleSessionHistory.sln
+cd src/OracleSessionHistory.Client && npm run typecheck
 ```
 
 テストは主に次を確認しています。
@@ -18,10 +18,10 @@ cd src/OpenDbSession.Client && npm run typecheck
 
 ## 監視対象の種類（Provider）を追加する
 
-1. `OpenDbSession.Core/Collection` に `ISessionSource` の実装を追加（取得失敗時は例外を投げる）
+1. `OracleSessionHistory.Core/Collection` に `ISessionSource` の実装を追加（取得失敗時は例外を投げる）
 2. 必要なら `IDbLinkInspector` を実装
 3. `SourceProviders` に定数を追加し `All` に含める
-4. `CoreServiceCollectionExtensions.AddOpenDbSessionCore` に登録
+4. `CoreServiceCollectionExtensions.AddOracleSessionHistoryCore` に登録
 
 ## 収集項目を追加する
 
@@ -29,7 +29,7 @@ cd src/OpenDbSession.Client && npm run typecheck
 
 ## スキーマ変更
 
-`EnsureCreated` を使っているため、エンティティを変更した場合、開発環境では `.data/opendbsession.db*` を削除して再作成します。本番で履歴を残したまま変更する場合は、EF Core マイグレーションの導入（`dotnet ef migrations add`）を検討してください。
+`EnsureCreated` を使っているため、エンティティを変更した場合、開発環境では `.data/oraclesessionhistory.db*` を削除して再作成します。本番で履歴を残したまま変更する場合は、EF Core マイグレーションの導入（`dotnet ef migrations add`）を検討してください。
 
 ## API 一覧
 

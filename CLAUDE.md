@@ -1,4 +1,4 @@
-# OpenDbSession 開発ルール
+# OracleSessionHistory 開発ルール
 
 Oracle の接続履歴（gv$session）を収集・閲覧するシステム。
 
@@ -6,13 +6,13 @@ Oracle の接続履歴（gv$session）を収集・閲覧するシステム。
 
 | プロジェクト | 役割 |
 |---|---|
-| `src/OpenDbSession.Batch` | Worker Service。監視対象ごとに数秒間隔でセッションを取得し、履歴 DB に保存する |
-| `src/OpenDbSession.Server` | ASP.NET Core Minimal API。画面用の API と Client の配信 |
-| `src/OpenDbSession.Client` | React + TypeScript（Vite）。サマリー・セッション履歴・接続数表・DB Link 利用元・設定 |
-| `src/OpenDbSession.Core` | Batch/Server 共通。エンティティ、DbContext、Oracle 取得、追跡ロジック |
-| `src/OpenDbSession.ServiceDefaults` | Aspire 共通設定（OpenTelemetry・ヘルスチェック） |
-| `src/OpenDbSession.AppHost` | Aspire AppHost（デバッグ用。3 プロジェクトをまとめて起動） |
-| `src/OpenDbSession.Tests` | xUnit テスト |
+| `src/OracleSessionHistory.Batch` | Worker Service。監視対象ごとに数秒間隔でセッションを取得し、履歴 DB に保存する |
+| `src/OracleSessionHistory.Server` | ASP.NET Core Minimal API。画面用の API と Client の配信 |
+| `src/OracleSessionHistory.Client` | React + TypeScript（Vite）。サマリー・セッション履歴・接続数表・DB Link 利用元・設定 |
+| `src/OracleSessionHistory.Core` | Batch/Server 共通。エンティティ、DbContext、Oracle 取得、追跡ロジック |
+| `src/OracleSessionHistory.ServiceDefaults` | Aspire 共通設定（OpenTelemetry・ヘルスチェック） |
+| `src/OracleSessionHistory.AppHost` | Aspire AppHost（デバッグ用。3 プロジェクトをまとめて起動） |
+| `src/OracleSessionHistory.Tests` | xUnit テスト |
 
 詳細は `docs/` を参照（`docs/architecture.md` から読むこと）。
 
@@ -20,14 +20,14 @@ Oracle の接続履歴（gv$session）を収集・閲覧するシステム。
 
 ```bash
 # 全体をデバッグ起動（Aspire ダッシュボードが開く）
-dotnet run --project src/OpenDbSession.AppHost
+dotnet run --project src/OracleSessionHistory.AppHost
 
 # ビルド・テスト
-dotnet build src/OpenDbSession.sln
-dotnet test src/OpenDbSession.sln
+dotnet build src/OracleSessionHistory.sln
+dotnet test src/OracleSessionHistory.sln
 
 # Client の型チェック・ビルド
-cd src/OpenDbSession.Client && npm run typecheck && npm run build
+cd src/OracleSessionHistory.Client && npm run typecheck && npm run build
 ```
 
 ## 必ず守るルール
@@ -52,5 +52,5 @@ cd src/OpenDbSession.Client && npm run typecheck && npm run build
 
 ## スキル
 
-- `.claude/skills/opendbsession-dev` … 起動・デバッグ・検証手順
+- `.claude/skills/oraclesessionhistory-dev` … 起動・デバッグ・検証手順
 - `.claude/skills/oracle-session-collection` … Oracle 収集 SQL・分類・DB Link 特定の変更手順

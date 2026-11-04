@@ -1,4 +1,4 @@
-# OpenDbSession
+# OracleSessionHistory
 
 Oracle の接続履歴（`gv$session`）を数秒間隔で収集し、**どの端末・プログラム・ユーザ（＝どのシステム）が DB を使っているか**を閲覧するシステムです。
 
@@ -14,13 +14,13 @@ Oracle の接続履歴（`gv$session`）を数秒間隔で収集し、**どの�
 
 ```
 src/
-  OpenDbSession.Batch          Worker Service（収集）
-  OpenDbSession.Server         ASP.NET Core API
-  OpenDbSession.Client         React + TypeScript（Vite）
-  OpenDbSession.AppHost        .NET Aspire（デバッグ用）
-  OpenDbSession.Core           共通ライブラリ（収集・追跡ロジック、EF Core）
-  OpenDbSession.ServiceDefaults
-  OpenDbSession.Tests
+  OracleSessionHistory.Batch          Worker Service（収集）
+  OracleSessionHistory.Server         ASP.NET Core API
+  OracleSessionHistory.Client         React + TypeScript（Vite）
+  OracleSessionHistory.AppHost        .NET Aspire（デバッグ用）
+  OracleSessionHistory.Core           共通ライブラリ（収集・追跡ロジック、EF Core）
+  OracleSessionHistory.ServiceDefaults
+  OracleSessionHistory.Tests
 docs/                          ドキュメント
 ```
 
@@ -29,8 +29,8 @@ docs/                          ドキュメント
 必要なもの：.NET SDK 10、Node.js 20 以上
 
 ```bash
-cd src/OpenDbSession.Client && npm install && cd ../..
-dotnet run --project src/OpenDbSession.AppHost
+cd src/OracleSessionHistory.Client && npm install && cd ../..
+dotnet run --project src/OracleSessionHistory.AppHost
 ```
 
 Aspire ダッシュボードから `client` の URL を開きます。Development 環境では Oracle が無くても動作確認できるよう「デモDB」が自動登録されます。
