@@ -67,21 +67,14 @@ export default function App() {
 
   return (
     <div className="layout">
-      <header className="header">
+      <aside className="sidebar">
         <div className="brand" onClick={() => navigate('/')}>
           <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden>
             <ellipse cx="16" cy="7" rx="11" ry="4" fill="currentColor" opacity=".7" />
             <path d="M5 7v18c0 2.2 4.9 4 11 4s11-1.8 11-4V7c0 2.2-4.9 4-11 4S5 9.2 5 7z" fill="currentColor" />
           </svg>
-          OracleSessionHistory
+          <span>Oracle Session History</span>
         </div>
-        <nav className="nav">
-          {menus.map((m) => (
-            <a key={m.path} href={`#${m.path}`} className={route.path === m.path ? 'active' : ''}>
-              {m.label}
-            </a>
-          ))}
-        </nav>
         <label className="target-select">
           <span>監視対象</span>
           <select
@@ -96,7 +89,14 @@ export default function App() {
             ))}
           </select>
         </label>
-      </header>
+        <nav className="nav">
+          {menus.map((m) => (
+            <a key={m.path} href={`#${m.path}`} className={route.path === m.path ? 'active' : ''}>
+              {m.label}
+            </a>
+          ))}
+        </nav>
+      </aside>
       <main className="main">{page}</main>
     </div>
   )
