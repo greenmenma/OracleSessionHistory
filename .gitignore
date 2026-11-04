@@ -1,0 +1,30 @@
+# .NET
+bin/
+obj/
+*.user
+.vs/
+*.suo
+TestResults/
+
+# Node
+node_modules/
+dist/
+
+# Client のビルド出力（Server から配信）
+src/OpenDbSession.Server/wwwroot/
+
+# ローカルデータ（SQLite）
+.data/
+*.db
+*.db-shm
+*.db-wal
+
+# IDE / OS
+.idea/
+.vscode/*
+!.vscode/launch.json
+.DS_Store
+Thumbs.db
+
+# Claude Code ローカル設定
+.claude/settings.local.json

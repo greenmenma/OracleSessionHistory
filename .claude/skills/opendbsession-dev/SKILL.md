@@ -1,0 +1,53 @@
+---
+name: opendbsession-dev
+description: OpenDbSession の起動・デバッグ・動作確認の手順。アプリを起動したい、画面を確認したい、変更後に検証したい、Windows でのデバッグ方法を知りたいときに使う。
+---
+
+# OpenDbSession の開発・検証手順
+
+## 1. ビルドとテスト
+
+```bash
+dotnet build src/OpenDbSession.sln
+dotnet test src/OpenDbSession.sln
+cd src/OpenDbSession.Client && npm install && npm run typecheck
+```
+
+すべて成功してから次に進む。
+
+## 2. 起動（Aspire）
+
+```bash
+dotnet run --project src/OpenDbSession.AppHost
+```
+
+- ログに出る Login URL で Aspire ダッシュボードを開き、`client` の URL から画面を開く。
+- 履歴 DB はリポジトリ直下の `.data/opendbsession.db`（SQLite）。
+- Development では監視対象が無いと Batch が「デモDB」（Provider=Demo）と過去 2 ヶ月分の履歴を作成する。Oracle 無しで全画面を確認できる。
+- デモは 20 回に 1 回取得失敗を発生させる。失敗時に接続数が減らない（切断扱いにならない）ことを確認できる。
+
+### Aspire を使わない場合
+
+ターミナルを 3 つ開き、同じ `ConnectionStrings__AppDb` を指定して起動する。
+
+```bash
+# Windows (PowerShell) の例: $env:ConnectionStrings__AppDb="Data Source=C:\work\opendbsession.db"
+dotnet run --project src/OpenDbSession.Server   # http://localhost:5292
+dotnet run --project src/OpenDbSession.Batch
+cd src/OpenDbSession.Client && npm run dev       # http://localhost:5173 （/api は 5292 へプロキシ）
+```
+
+## 3. 動作確認のチェックリスト
+
+- サマリー：接続数・アプリ数・端末数・履歴数が表示され、5 秒ごとに更新される
+- セッション履歴：検索条件なしで新しいログオン順に表示される。行クリックで詳細
+- ORACLE.EXE のセッションに「DB Linkの可能性」バッジ、詳細に接続元の説明
+- 接続数表：本日〜6日前・本日〜1ヶ月・1ヶ月〜2ヶ月の列
+- 設定：監視対象の追加・接続テスト、DB Link 接続元の追加 → 「DB Link 一覧を取得」→ 選択 → 保存
+- API の確認: `curl http://localhost:<client-port>/api/summary`
+
+## 4. トラブルシューティング
+
+- `NU1301`（ローカルソースが無い）: リポジトリ直下の `nuget.config` で nuget.org のみを使うようにしてある。別ディレクトリから実行していないか確認。
+- Server だけ 500 になる: Aspire ダッシュボードの `server` のログ（構造化ログ）で例外を確認。EF Core の LINQ が SQLite で変換できないケースが多い。
+- Oracle 接続エラー: 設定画面の「接続テスト」でメッセージを確認。権限は `docs/oracle-privileges.md`。
