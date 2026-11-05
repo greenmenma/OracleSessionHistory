@@ -5,6 +5,7 @@ using OracleSessionHistory.Core.Collection.Demo;
 using OracleSessionHistory.Core.Collection.Oracle;
 using OracleSessionHistory.Core.Data;
 using OracleSessionHistory.Core.DbLinks;
+using OracleSessionHistory.Core.Processes;
 using OracleSessionHistory.Core.Services;
 
 namespace OracleSessionHistory.Core;
@@ -27,6 +28,11 @@ public static class CoreServiceCollectionExtensions
         services.AddSingleton<IDbLinkInspector, OracleDbLinkInspector>();
         services.AddSingleton<IDbLinkInspector, DemoDbLinkInspector>();
         services.AddSingleton<DbLinkInspectorFactory>();
+
+        // 接続元サーバーのプロセス情報（WMI/CIM）
+        services.AddSingleton<CimProcessInspector>();
+        services.AddSingleton<DemoProcessInspector>();
+        services.AddSingleton<ProcessInspectorResolver>();
 
         services.AddSingleton<CollectionService>();
         return services;
