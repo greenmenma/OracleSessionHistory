@@ -216,6 +216,41 @@ public sealed class AppDbMigrationTests : IDisposable
         Assert.Equal("old", usages[1].AppName);
     }
 
+    [Fact]
+    public async Task 登録外で対象外にした行を調べ直し端末名とsqlplusのコマンドラインとDBLink経由の接続元を整える()
+    {
+        await using var db = new AppDbContext(_sqliteOptions);
+        var migrator = db.GetService<IMigrator>();
+        var all = db.Database.GetMigrations().ToList();
+        await migrator.MigrateAsync(all[all.FindIndex(m => m.EndsWith("_AddAncestryAndLinkOrigin")) - 1]);
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO Targets (Id, Name, Provider, ConnectionString, IntervalSeconds, LinkIntervalSeconds, IncludeBackground, CollectSqlText, Enabled, CreatedAt, UpdatedAt, ConsecutiveFailures) " +
+            "VALUES (1, 'T', 'Oracle', 'x', 5, 30, 0, 1, 1, '2026-11-01 00:00:00', '2026-11-01 00:00:00', 0)");
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO Sessions (Id, TargetId, InstId, Sid, Serial, LogonTime, Machine, Program, ProcessKind, AppName, ProcInfoState, ProcInfoError, ProcName, ProcCommandLine, FirstSeenAt, LastSeenAt, IsConnected, DisconnectUncertain) VALUES " +
+            "(1, 1, 1, 1, 1, '2026-11-01 09:00:00', ' WEB01 ', 'foo.exe', 'Client', 'foo.exe', 'NotApplicable', 'プロセス情報を取得する実行ファイルに登録されていません', NULL, NULL, '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1, 0), " +
+            "(2, 1, 1, 2, 1, '2026-11-01 09:00:00', 'BATCH01', 'sqlplus.exe', 'Client', 'sqlplus.exe', 'Resolved', NULL, 'sqlplus.exe', 'sqlplus scott/tiger@db', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1, 0), " +
+            "(3, 1, 1, 3, 1, '2026-11-01 09:00:00', 'KIKAN-DB01', 'ORACLE.EXE', 'DbLinkSuspect', 'ORACLE.EXE', 'NotApplicable', NULL, NULL, NULL, '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1, 0), " +
+            "(4, 1, 1, 4, 1, '2026-11-01 09:00:00', 'PC01', 'foo.exe', 'Client', 'foo.exe', 'NotApplicable', 'プロセス情報を取得する実行ファイルに登録されていません', NULL, NULL, '2026-11-01 09:00:00', '2026-11-01 09:00:00', 0, 0)");
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO LinkSources (Id, TargetId, Name, Provider, ConnectionString, Enabled, SelectedLinks, CreatedAt, UpdatedAt) " +
+            "VALUES (1, 1, 'L', 'Oracle', 'y', 1, '[]', '2026-11-01 00:00:00', '2026-11-01 00:00:00')");
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO DbLinkUsages (Id, LinkSourceId, TargetId, DbLinkName, MatchType, InstId, Sid, Serial, LogonTime, Machine, AppName, ProcInfoState, MatchedSessionId, FirstSeenAt, LastSeenAt, HitCount) VALUES " +
+            "(1, 1, 1, '(PROCESS)', 'PROCESS', 1, 1, 1, '2026-11-01 09:00:00', 'OLD01', '古い.exe', 'Resolved', 3, '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1), " +
+            "(2, 1, 1, '(PROCESS)', 'PROCESS', 1, 2, 1, '2026-11-01 09:00:00', 'KIKAN-AP01 ', 'IIS: Juchu', 'Resolved', 3, '2026-11-01 09:00:00', '2026-11-01 10:00:00', 1)");
+
+        await migrator.MigrateAsync();
+
+        var s = await db.Sessions.OrderBy(x => x.Id).ToListAsync();
+        Assert.Equal((ProcInfoStates.Pending, (string?)null, "WEB01"), (s[0].ProcInfoState, s[0].ProcInfoError, s[0].Machine));
+        Assert.Equal(ProcInfoStates.NotApplicable, s[3].ProcInfoState); // 切断済みはそのまま
+        Assert.Null(s[1].ProcCommandLine);
+        Assert.Equal(ProcInfoStates.Pending, s[1].ProcInfoState);
+        Assert.Equal(("KIKAN-AP01", "IIS: Juchu"), (s[2].LinkOriginMachine, s[2].LinkOriginApp));
+        Assert.Null(s[0].LinkOriginApp);
+    }
+
     /// <summary>マイグレーション導入前（EnsureCreated）の DB を再現する：Initial のスキーマを作り、履歴テーブルを消す</summary>
     private static async Task CreateLegacySchemaAsync(AppDbContext db)
     {

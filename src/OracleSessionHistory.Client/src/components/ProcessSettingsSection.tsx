@@ -14,7 +14,6 @@ function toForm(s: ProcessSettings): ProcessSettingsInput {
     dnsSuffix: s.dnsSuffix ?? '',
     timeoutSeconds: s.timeoutSeconds,
     excludeMachines: s.excludeMachines ?? '',
-    targetPrograms: s.targetPrograms ?? '',
   }
 }
 
@@ -134,23 +133,6 @@ export default function ProcessSettingsSection() {
             />
           </label>
         </div>
-        <label>
-          プロセス情報を取得する実行ファイル（PROGRAM。カンマ区切り、* はワイルドカード）
-          <input
-            value={f.targetPrograms ?? ''}
-            placeholder="例：w3wp.exe, dotnet.exe, 販売管理.exe"
-            onChange={(e) => set('targetPrograms', e.target.value)}
-          />
-        </label>
-        {f.enabled && !f.targetPrograms?.trim() && (
-          <div className="alert warn">
-            実行ファイルが登録されていないため、監視対象に直接接続しているセッションのプロセス情報は取得しません。
-          </div>
-        )}
-        <small className="muted">
-          監視対象に直接接続しているセッションは、ここに登録した実行ファイルだけ調べます（未登録なら調べません）。DB Link
-          利用元のセッションは登録に関係なく調べます。
-        </small>
         <label>
           対象外の端末（カンマ区切り、* はワイルドカード。利用者 PC など問い合わせない端末）
           <input value={f.excludeMachines ?? ''} placeholder="例：PC-*, KIOSK*" onChange={(e) => set('excludeMachines', e.target.value)} />

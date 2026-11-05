@@ -11,7 +11,7 @@ namespace OracleSessionHistory.Core.Services;
 public sealed record ProcessInfoOutcome(int Resolved, int Failed, int Skipped);
 
 /// <summary>
-/// 接続中のクライアントセッション（登録した実行ファイルのもの）と、DB Link 接続元 DB 上の利用元セッションについて、
+/// 接続中のクライアントセッションと、DB Link 接続元 DB 上の利用元セッションについて、
 /// 接続元サーバーのプロセス情報を取得してアプリ名を確定する（Batch から呼ばれる）。
 /// セッション収集とは独立して動き、失敗してもセッションの接続・切断の判定には一切影響しない。
 /// </summary>
@@ -43,7 +43,6 @@ public sealed class ProcessInfoService(
         await CloseUnreachableAsync(db, settings is { Enabled: true }, ct);
         if (settings is not { Enabled: true }) return new ProcessInfoOutcome(0, 0, 0);
         var options = ToOptions(settings);
-        WarnIfNoTargetPrograms(settings);
 
         var sessions = await db.Sessions
             .Where(s => s.IsConnected && s.ProcessKind == ProcessKinds.Client
@@ -85,11 +84,8 @@ public sealed class ProcessInfoService(
         {
             var host = ClientProcessRules.HostOf(r.Row.Machine);
             var pid = ClientProcessRules.ProcessIdOf(r.Row.ClientProcess);
-            // 監視対象への直接の接続は登録した実行ファイルだけ調べる。DB Link 利用元は接続元 DB の登録で対象を絞っているため常に調べる
-            string? reason = r.Direct && !ClientProcessRules.IsTargetProgram(r.Row.Program, settings.TargetPrograms)
-                    ? "プロセス情報を取得する実行ファイルに登録されていません"
-                // DB Link 利用元がジョブ・さらに別の DB Link 等の場合、端末は DB サーバー自身のため問い合わせない
-                : !r.Direct && ProgramClassifier.Classify(r.Row.Program, "USER", r.Row.Module) != ProcessKinds.Client
+            // DB Link 利用元がジョブ・さらに別の DB Link 等の場合、端末は DB サーバー自身のため問い合わせない
+            string? reason = !r.Direct && ProgramClassifier.Classify(r.Row.Program, "USER", r.Row.Module) != ProcessKinds.Client
                     ? "接続元が Oracle のプロセス（ジョブ・DB Link 等）のため取得しません"
                 : host is null ? "端末名（MACHINE）がありません"
                 : pid is null ? $"PROCESS（{r.Row.ClientProcess}）からプロセス ID を取得できません"
@@ -181,6 +177,21 @@ public sealed class ProcessInfoService(
         }
 
         await SaveSkippingDeletedAsync(db, ct);
+
+        // DB Link 利用元のアプリが確定したら、監視対象側のセッション（ORACLE.EXE）にも接続元のアプリとして反映する
+        var linked = work.Where(w => w.Row is DbLinkUsage { MatchedSessionId: not null, ProcInfoState: ProcInfoStates.Resolved })
+            .Select(w => ((DbLinkUsage)w.Row).MatchedSessionId!.Value).ToList();
+        if (linked.Count > 0)
+        {
+            try
+            {
+                await LinkOriginSync.RefreshAsync(db, linked, ct);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                logger.LogWarning(ex, "DB Link 接続元のアプリをセッションに反映できませんでした（次回の利用元の取得で反映します）");
+            }
+        }
         return new ProcessInfoOutcome(resolved, failed, skipped.Count);
     }
 
@@ -247,30 +258,21 @@ public sealed class ProcessInfoService(
                 .SetProperty(s => s.ProcInfoAt, now), ct);
         if (enabled) return;
 
+        // 読んだ後に画面で有効にして保存（調べ直しの登録）された場合に取り消さないよう、更新の時点でも無効であることを条件にする
         const string disabled = "プロセス情報の取得が無効です";
+        var stillDisabled = db.ProcessInspectionSettings.Where(p => p.Id == ProcessInspectionSettings.SingletonId && p.Enabled);
         await db.Sessions
-            .Where(s => s.ProcInfoState == ProcInfoStates.Pending)
+            .Where(s => s.IsConnected && s.ProcInfoState == ProcInfoStates.Pending && !stillDisabled.Any())
             .ExecuteUpdateAsync(x => x
                 .SetProperty(s => s.ProcInfoState, ProcInfoStates.NotApplicable)
                 .SetProperty(s => s.ProcInfoError, disabled)
                 .SetProperty(s => s.ProcInfoAt, now), ct);
         await db.DbLinkUsages
-            .Where(u => u.ProcInfoState == ProcInfoStates.Pending)
+            .Where(u => u.ProcInfoState == ProcInfoStates.Pending && !stillDisabled.Any())
             .ExecuteUpdateAsync(x => x
                 .SetProperty(u => u.ProcInfoState, ProcInfoStates.NotApplicable)
                 .SetProperty(u => u.ProcInfoError, disabled)
                 .SetProperty(u => u.ProcInfoAt, now), ct);
-    }
-
-    private bool _warnedNoTargetPrograms;
-
-    /// <summary>実行ファイルが未登録のときは直接の接続を一切調べないため、気づけるよう一度だけ警告する（登録されたら再度警告できるよう戻す）</summary>
-    private void WarnIfNoTargetPrograms(ProcessInspectionSettings settings)
-    {
-        var empty = string.IsNullOrWhiteSpace(settings.TargetPrograms);
-        if (empty && !_warnedNoTargetPrograms)
-            logger.LogWarning("プロセス情報を取得する実行ファイルが登録されていないため、監視対象への直接の接続はプロセス情報を取得しません（設定画面で登録してください。DB Link 利用元は取得します）");
-        _warnedNoTargetPrograms = empty;
     }
 
     /// <summary>設定画面の接続テスト</summary>
@@ -325,14 +327,24 @@ public sealed class ProcessInfoService(
     private static void Apply(IProcessInfoRecord row, ClientProcessInfo p, DateTime now)
     {
         SetState(row, ProcInfoStates.Resolved, null, now);
-        row.ProcName = p.Name;
-        row.ProcPath = p.ExecutablePath;
-        row.ProcCommandLine = p.CommandLine;
-        row.ProcOwner = p.Owner;
-        row.ProcStartedAt = p.StartedAt;
-        row.ProcParentName = p.ParentName;
-        row.IisAppPool = p.IisAppPool is { Length: > 256 } pool ? pool[..256] : p.IisAppPool;
-        row.IisSite = p.IisSite;
-        (row.AppName, row.AppDetail) = AppIdentifier.Identify(p, row.Program, row.Module, row.OsUser);
+        // コマンドラインに含まれるパスワード（sqlplus scott/tiger@db 等）は保存しない
+        var tool = ClientProcessRules.IsOracleTool(p.Name) || ClientProcessRules.IsOracleTool(p.CommandLine);
+        var masked = p with
+        {
+            CommandLine = ClientProcessRules.MaskCredentials(p.CommandLine),
+            Ancestors = p.Ancestors?.Select(a => a with { CommandLine = ClientProcessRules.MaskCredentials(a.CommandLine, tool) }).ToList(),
+        };
+        row.ProcName = masked.Name;
+        row.ProcPath = masked.ExecutablePath;
+        row.ProcCommandLine = masked.CommandLine;
+        row.ProcOwner = masked.Owner;
+        row.ProcStartedAt = masked.StartedAt;
+        row.ProcParentName = masked.ParentName ?? masked.Ancestors?.FirstOrDefault()?.Name;
+        row.ProcAncestry = masked.Ancestors is { Count: > 0 } ancestors
+            ? string.Join("\n", ancestors.Select(a => string.IsNullOrWhiteSpace(a.CommandLine) ? a.Name : $"{a.Name}: {a.CommandLine}"))
+            : null;
+        row.IisAppPool = masked.IisAppPool is { Length: > 256 } pool ? pool[..256] : masked.IisAppPool;
+        row.IisSite = masked.IisSite;
+        (row.AppName, row.AppDetail) = AppIdentifier.Identify(masked, row.Program, row.Module, row.OsUser);
     }
 }

@@ -27,11 +27,5 @@ public class ProcessInspectionSettings
     /// <summary>プロセス情報を取得しない端末のパターン（カンマ区切り、* はワイルドカード）</summary>
     public string? ExcludeMachines { get; set; }
 
-    /// <summary>
-    /// プロセス情報を取得する実行ファイル（gv$session.program に対するパターン。カンマ区切り、* はワイルドカード）。
-    /// 監視対象への直接の接続は、ここに一致するものだけ調べる。空なら調べない。DB Link 利用元は常に調べる。
-    /// </summary>
-    public string? TargetPrograms { get; set; }
-
     public DateTime UpdatedAt { get; set; }
 }

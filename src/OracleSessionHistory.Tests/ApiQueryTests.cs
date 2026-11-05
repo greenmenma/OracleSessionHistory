@@ -35,13 +35,14 @@ public sealed class ApiQueryTests : IDisposable
     private int _sid;
 
     private void Add(string kind, string machine = "WEB01", string app = "IIS: Foo", string? detail = null, DateTime? logon = null,
-        bool connected = false, string? owner = null)
+        bool connected = false, string? owner = null, (string Machine, string App)? origin = null)
     {
         var l = logon ?? Today.AddHours(9);
         _db.Sessions.Add(new TrackedSession
         {
             TargetId = _targetId, InstId = 1, Sid = ++_sid, Serial = 1, LogonTime = l, Machine = machine, Program = "w3wp.exe",
             AppName = app, AppDetail = detail, ProcessKind = kind, ProcOwner = owner, IsConnected = connected,
+            LinkOriginMachine = origin?.Machine, LinkOriginApp = origin?.App,
             FirstSeenAt = l, LastSeenAt = l.AddMinutes(1),
         });
         _db.SaveChanges();
@@ -65,7 +66,7 @@ public sealed class ApiQueryTests : IDisposable
     }
 
     [Fact]
-    public void DBLinkの可能性がある行には最後に観測した接続元のアプリを出す()
+    public async Task DBLinkの可能性がある行には最後に観測した接続元のアプリを出す()
     {
         Add(ProcessKinds.DbLinkSuspect, app: "ORACLE.EXE");
         var sessionId = _db.Sessions.Single().Id;
@@ -82,6 +83,8 @@ public sealed class ApiQueryTests : IDisposable
         }
         _db.SaveChanges();
 
+        await LinkOriginSync.RefreshAsync(_db, [sessionId], default);
+        _db.ChangeTracker.Clear();
         var item = SessionEndpoints.Project(_db.Sessions).Single();
 
         Assert.Equal(("IIS: Juchu", "KIKAN-AP01"), (item.LinkOriginApp, item.LinkOriginMachine));
@@ -128,31 +131,6 @@ public sealed class ApiQueryTests : IDisposable
     }
 
     [Fact]
-    public void 完全一致は前後の空白と大文字小文字を区別しない()
-    {
-        // SQL Server（既定の照合順序）と同じ結果にする
-        Add(ProcessKinds.Client, machine: " web01 ", app: "IIS: pool");
-        Add(ProcessKinds.Client, machine: "WEB011", app: "IIS: Pool");
-
-        var rows = SessionEndpoints.Filter(_db.Sessions,
-            new SessionSearch(null, null, null, "WEB01", null, null, null, null, null, null, App: "IIS: Pool ", Exact: true)).ToList();
-
-        Assert.Equal(" web01 ", rows.Single().Machine);
-    }
-
-    [Fact]
-    public void 完全一致で端末が不明の場合は空白だけの端末も含む()
-    {
-        Add(ProcessKinds.Client, machine: "  ", app: "IIS: Pool");
-        Add(ProcessKinds.Client, machine: "WEB01", app: "IIS: Pool");
-
-        var rows = SessionEndpoints.Filter(_db.Sessions,
-            new SessionSearch(null, null, null, SessionEndpoints.UnknownMachine, null, null, null, null, null, null, App: "IIS: Pool", Exact: true)).ToList();
-
-        Assert.Equal("  ", rows.Single().Machine);
-    }
-
-    [Fact]
     public void 完全一致で端末が不明の場合は端末の無い行()
     {
         Add(ProcessKinds.Client, machine: "", app: "IIS: Pool");
@@ -162,6 +140,37 @@ public sealed class ApiQueryTests : IDisposable
             new SessionSearch(null, null, null, SessionEndpoints.UnknownMachine, null, null, null, null, null, null, App: "IIS: Pool", Exact: true)).ToList();
 
         Assert.Equal("", rows.Single().Machine);
+    }
+
+    [Fact]
+    public async Task 接続アプリ表ではDBLink経由の接続を接続元の端末とアプリでまとめる()
+    {
+        Add(ProcessKinds.Client, "KIKAN-AP02", "在庫照会.exe", @"D:\Kikan", Today.AddHours(9));
+        Add(ProcessKinds.DbLinkSuspect, "KIKAN-DB01", "ORACLE.EXE", null, Today.AddHours(10), connected: true, origin: ("KIKAN-AP02", "在庫照会.exe"));
+        Add(ProcessKinds.DbLinkSuspect, "KIKAN-DB01", "ORACLE.EXE", null, Today.AddHours(11));
+
+        var rows = await ReportEndpoints.QueryConnectionCountsAsync(_db, null, null, Today, default);
+
+        var origin = rows.Single(r => r.Machine == "KIKAN-AP02");
+        Assert.Equal(("在庫照会.exe", 2, 1, 1), (origin.AppName, origin.Today, origin.ViaDbLink, origin.Connected));
+        var unresolved = rows.Single(r => r.Machine == "KIKAN-DB01");
+        Assert.Equal(("ORACLE.EXE", 1, 0), (unresolved.AppName, unresolved.Today, unresolved.ViaDbLink));
+    }
+
+    [Fact]
+    public void 完全一致の一覧はDBLink経由の接続を接続元の端末とアプリで探す()
+    {
+        Add(ProcessKinds.Client, "KIKAN-AP02", "在庫照会.exe");
+        Add(ProcessKinds.DbLinkSuspect, "KIKAN-DB01", "ORACLE.EXE", origin: ("KIKAN-AP02", "在庫照会.exe"));
+        Add(ProcessKinds.DbLinkSuspect, "KIKAN-DB01", "ORACLE.EXE");
+
+        var origin = SessionEndpoints.Filter(_db.Sessions,
+            new SessionSearch(null, null, null, "KIKAN-AP02", null, null, null, null, null, null, App: "在庫照会.exe", Exact: true)).ToList();
+        var unresolved = SessionEndpoints.Filter(_db.Sessions,
+            new SessionSearch(null, null, null, "KIKAN-DB01", null, null, null, null, null, null, App: "ORACLE.EXE", Exact: true)).ToList();
+
+        Assert.Equal(2, origin.Count);
+        Assert.Null(unresolved.Single().LinkOriginApp);
     }
 
     [Fact]
@@ -206,10 +215,21 @@ public class ApiQuerySqlServerTests
             AppDbProviders.SqlServer, "Server=localhost;Database=x;Integrated Security=true;TrustServerCertificate=true").Options);
         var sql = SessionEndpoints.Filter(db.Sessions,
             new SessionSearch(null, null, null, "WEB01", null, null, null, null, null, null, App: "IIS: Pool", Exact: true)).ToQueryString();
-        Assert.Contains("UPPER(", sql);
+        Assert.DoesNotContain("UPPER(", sql); // インデックスを使えるよう、保存時に正規化した値をそのまま比べる
+        Assert.Contains("[s].[LinkOriginMachine]", sql);
         var unknown = SessionEndpoints.Filter(db.Sessions,
             new SessionSearch(null, null, null, SessionEndpoints.UnknownMachine, null, null, null, null, null, null, Exact: true)).ToQueryString();
         Assert.Contains("[s].[Machine] IS NULL", unknown);
+    }
+
+    [Fact]
+    public async Task 接続アプリ表はSqlServerでも変換できる()
+    {
+        using var db = new AppDbContext((DbContextOptions<AppDbContext>)AppDatabase.Configure(new DbContextOptionsBuilder<AppDbContext>(),
+            AppDbProviders.SqlServer, "Server=localhost;Database=x;Integrated Security=true;TrustServerCertificate=true").Options);
+        var sql = ReportEndpoints.ConnectionCountsQuery(db, null, null, new DateTime(2026, 11, 5)).ToQueryString();
+        Assert.Contains("GROUP BY", sql);
+        await Task.CompletedTask;
     }
 
     [Fact]
@@ -218,20 +238,7 @@ public class ApiQuerySqlServerTests
         using var db = new AppDbContext((DbContextOptions<AppDbContext>)AppDatabase.Configure(new DbContextOptionsBuilder<AppDbContext>(),
             AppDbProviders.SqlServer, "Server=localhost;Database=x;Integrated Security=true;TrustServerCertificate=true").Options);
         var sql = SessionEndpoints.Project(db.Sessions).ToQueryString();
-        Assert.Contains("[DbLinkUsages]", sql);
-    }
-}
-
-public class ProcessSettingsTargetProgramsTests
-{
-    [Theory]
-    [InlineData(null, "w3wp.exe", "w3wp.exe")]
-    [InlineData("", "w3wp.exe", null)]
-    [InlineData("  ", "w3wp.exe", null)]
-    [InlineData(" dotnet.exe ", "w3wp.exe", "dotnet.exe")]
-    public void 実行ファイルの登録は項目が無ければ保存済みの値を使う(string? incoming, string? stored, string? expected)
-    {
-        Assert.Equal(expected, ProcessSettingsEndpoints.MergeTargetPrograms(incoming, stored));
+        Assert.Contains("[LinkOriginApp]", sql);
     }
 }
 

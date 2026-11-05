@@ -53,6 +53,7 @@ public class DbLinkUsage : IProcessInfoRecord
     public string? ProcOwner { get; set; }
     public DateTime? ProcStartedAt { get; set; }
     public string? ProcParentName { get; set; }
+    public string? ProcAncestry { get; set; }
     public string? IisAppPool { get; set; }
     public string? IisSite { get; set; }
 

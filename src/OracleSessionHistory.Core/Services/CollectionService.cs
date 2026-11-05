@@ -151,6 +151,26 @@ public sealed class CollectionService(
             }
             source.LastPollAt = now;
             await db.SaveChangesAsync(ct);
+            await RefreshLinkOriginsAsync(db, source, ct);
+        }
+    }
+
+    /// <summary>
+    /// この接続元 DB の利用元が紐付いた、接続中の DB Link の可能性があるセッションに、接続元の端末・アプリを反映する。
+    /// 失敗してもセッション収集・利用元の記録には影響させない。
+    /// </summary>
+    private async Task RefreshLinkOriginsAsync(AppDbContext db, LinkSource source, CancellationToken ct)
+    {
+        try
+        {
+            var ids = await db.DbLinkUsages
+                .Where(u => u.LinkSourceId == source.Id && u.MatchedSessionId != null && u.MatchedSession!.IsConnected)
+                .Select(u => u.MatchedSessionId!.Value).Distinct().ToListAsync(ct);
+            await LinkOriginSync.RefreshAsync(db, ids, ct);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "[{Source}] DB Link 接続元のアプリをセッションに反映できませんでした（次回の取得で再度反映します）", source.Name);
         }
     }
 
@@ -197,7 +217,7 @@ public sealed class CollectionService(
             row.Username = u.Username;
             row.SchemaName = u.SchemaName;
             row.OsUser = u.OsUser;
-            row.Machine = u.Machine;
+            row.Machine = u.Machine?.Trim();
             row.Terminal = u.Terminal;
             row.Program = u.Program;
             row.Module = u.Module;

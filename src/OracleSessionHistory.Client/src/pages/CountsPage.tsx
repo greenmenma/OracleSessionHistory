@@ -84,6 +84,11 @@ export default function CountsPage({ targetId }: { targetId?: number }) {
                   <td>{r.machine ?? '(不明)'}</td>
                   <td>
                     <AppCell appName={r.appName} appDetail={r.appDetail} />
+                    {r.viaDbLink > 0 && (
+                      <div className="link-origin" title="DB Link 経由（ORACLE.EXE）の接続を、接続元のアプリとして数えています">
+                        うち DB Link 経由 {r.viaDbLink.toLocaleString()} 件{r.linkVia && <>（{r.linkVia}）</>}
+                      </div>
+                    )}
                   </td>
                   <td className="nowrap">{r.owner}</td>
                   <td className={`num ${r.connected === 0 ? 'zero' : ''}`}>{r.connected}</td>

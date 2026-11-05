@@ -32,7 +32,6 @@ public sealed class ProcessInfoServiceTests : IDisposable
         db.ProcessInspectionSettings.Add(new ProcessInspectionSettings
         {
             Id = ProcessInspectionSettings.SingletonId, Enabled = true, UserName = @"CORP\svc", Password = "p", ExcludeMachines = "PC-*",
-            TargetPrograms = "w3wp.exe, JDBC Thin Client",
         });
         db.SaveChanges();
         _targetId = t.Id;
@@ -274,7 +273,7 @@ public sealed class ProcessInfoServiceTests : IDisposable
     }
 
     private long AddUsage(int sid, string machine, string? process, string program, DateTime? lastSeen = null,
-        string state = ProcInfoStates.Pending)
+        string state = ProcInfoStates.Pending, long? matchedSessionId = null)
     {
         using var db = _factory.CreateDbContext();
         var u = new DbLinkUsage
@@ -282,7 +281,7 @@ public sealed class ProcessInfoServiceTests : IDisposable
             LinkSourceId = _linkSourceId, TargetId = _targetId, DbLinkName = DbLinkMatchTypes.ProcessOnlyLinkName,
             MatchType = DbLinkMatchTypes.Process, InstId = 1, Sid = sid, Serial = 1, LogonTime = Logon, Machine = machine,
             ClientProcess = process, Program = program, AppName = program, ProcInfoState = state,
-            FirstSeenAt = Logon, LastSeenAt = lastSeen ?? DateTime.Now, HitCount = 1,
+            FirstSeenAt = Logon, LastSeenAt = lastSeen ?? DateTime.Now, HitCount = 1, MatchedSessionId = matchedSessionId,
         };
         db.DbLinkUsages.Add(u);
         db.SaveChanges();
@@ -293,12 +292,6 @@ public sealed class ProcessInfoServiceTests : IDisposable
     {
         using var db = _factory.CreateDbContext();
         return db.DbLinkUsages.AsNoTracking().Single(u => u.Id == id);
-    }
-
-    private void SetTargetPrograms(string? patterns)
-    {
-        using var db = _factory.CreateDbContext();
-        db.ProcessInspectionSettings.ExecuteUpdate(x => x.SetProperty(s => s.TargetPrograms, patterns));
     }
 
     [Fact]
@@ -342,28 +335,27 @@ public sealed class ProcessInfoServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task 登録していない実行ファイルは調べない()
+    public async Task sqlplusは実行元を保存しコマンドラインのパスワードを隠す()
     {
-        var id = AddSession(1, "WEB01", "1", program: "sqlplus.exe");
+        var id = AddSession(1, "BATCH01", "300", program: "sqlplus.exe");
+        _inspector.Results["BATCH01"] =
+        [
+            new(300, "sqlplus.exe", @"C:\oracle\bin\sqlplus.exe", "sqlplus.exe scott/tiger@KOUKAI @D:\\sql\\monthly.sql", @"CORP\batch",
+                Logon.AddMinutes(-1), "cmd.exe", null, null,
+                [
+                    new(290, "cmd.exe", "cmd.exe /c D:\\Batch\\月次.bat scott/tiger", Logon.AddMinutes(-2)),
+                    new(10, "jp1ajs2.exe", null, Logon.AddDays(-3)),
+                ]),
+        ];
 
         await _service.RunOnceAsync(default);
 
         var s = Get(id);
-        Assert.Equal(ProcInfoStates.NotApplicable, s.ProcInfoState);
-        Assert.Contains("登録", s.ProcInfoError);
-        Assert.Empty(_inspector.Calls);
-    }
-
-    [Fact]
-    public async Task 実行ファイルの登録が無ければ監視対象への直接の接続は調べない()
-    {
-        SetTargetPrograms(null);
-        var id = AddSession(1, "WEB01", "1");
-
-        await _service.RunOnceAsync(default);
-
-        Assert.Equal(ProcInfoStates.NotApplicable, Get(id).ProcInfoState);
-        Assert.Empty(_inspector.Calls);
+        Assert.Equal(ProcInfoStates.Resolved, s.ProcInfoState);
+        Assert.Equal("sqlplus.exe: 月次.bat", s.AppName);
+        Assert.Equal("sqlplus.exe scott/********@KOUKAI @D:\\sql\\monthly.sql", s.ProcCommandLine);
+        Assert.Equal("cmd.exe: cmd.exe /c D:\\Batch\\月次.bat scott/********\njp1ajs2.exe", s.ProcAncestry);
+        Assert.DoesNotContain("tiger", s.AppDetail ?? "");
     }
 
     [Fact]
@@ -384,9 +376,21 @@ public sealed class ProcessInfoServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task DBLink利用元は実行ファイルを登録していなくても調べる()
+    public async Task DBLink利用元のアプリが確定したら監視対象側のセッションに反映する()
     {
-        SetTargetPrograms(null);
+        var link = AddSession(1, "KIKAN-DB01", "3120:4410", program: "ORACLE.EXE", kind: ProcessKinds.DbLinkSuspect, state: ProcInfoStates.NotApplicable);
+        AddUsage(1, "KIKAN-AP01", "5120", "w3wp.exe", matchedSessionId: link);
+        _inspector.Results["KIKAN-AP01"] = [W3wp(5120, "Juchu")];
+
+        await _service.RunOnceAsync(default);
+
+        var s = Get(link);
+        Assert.Equal(("KIKAN-AP01", "IIS: Juchu"), (s.LinkOriginMachine, s.LinkOriginApp));
+    }
+
+    [Fact]
+    public async Task DBLink利用元のexeのフォルダを記録する()
+    {
         var id = AddUsage(1, "KIKAN-AP02", "77", "在庫照会.exe");
         _inspector.Results["KIKAN-AP02"] = [new(77, "在庫照会.exe", @"D:\Kikan\在庫照会.exe", null, @"CORP\kikan02", Logon.AddHours(-1), "explorer.exe", null, null)];
 
@@ -430,20 +434,20 @@ public sealed class ProcessInfoServiceTests : IDisposable
     public async Task 取得中に設定が変わったら対象外の判断を保存しない()
     {
         var target = AddSession(1, "WEB01", "1");
-        var unregistered = AddSession(2, "WEB02", "2", program: "sqlplus.exe");
+        var excluded = AddSession(2, "PC-01", "2");
         _inspector.Results["WEB01"] = [W3wp(1, "Foo")];
-        // 問い合わせ中に画面から設定（sqlplus.exe を追加）を保存した想定
+        // 問い合わせ中に画面から設定（対象外の端末を解除）を保存した想定
         _inspector.OnInspect = () =>
         {
             using var db = _factory.CreateDbContext();
             db.ProcessInspectionSettings.ExecuteUpdate(x => x
-                .SetProperty(s => s.TargetPrograms, "w3wp.exe, sqlplus.exe").SetProperty(s => s.UpdatedAt, DateTime.Now));
+                .SetProperty(s => s.ExcludeMachines, (string?)null).SetProperty(s => s.UpdatedAt, DateTime.Now));
         };
 
         await _service.RunOnceAsync(default);
 
         Assert.Equal(ProcInfoStates.Resolved, Get(target).ProcInfoState);
-        Assert.Equal(ProcInfoStates.Pending, Get(unregistered).ProcInfoState);
+        Assert.Equal(ProcInfoStates.Pending, Get(excluded).ProcInfoState);
     }
 
     [Fact]

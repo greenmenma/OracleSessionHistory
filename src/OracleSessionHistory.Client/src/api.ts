@@ -154,6 +154,8 @@ export interface TrackedSession {
   procOwner: string | null
   procStartedAt: string | null
   procParentName: string | null
+  /** 実行元（親から順に 1 行ずつ） */
+  procAncestry: string | null
   iisAppPool: string | null
   iisSite: string | null
 }
@@ -196,6 +198,8 @@ export interface DbLinkUsage {
   procOwner: string | null
   procStartedAt: string | null
   procParentName: string | null
+  /** 実行元（親から順に 1 行ずつ） */
+  procAncestry: string | null
   iisAppPool: string | null
   iisSite: string | null
 }
@@ -209,6 +213,9 @@ export interface SessionDetail {
 }
 
 export interface ConnectionCountRow {
+  /** DB Link 経由（ORACLE.EXE）のログオン数と、経由した DB サーバー */
+  viaDbLink: number
+  linkVia: string | null
   machine: string | null
   appName: string
   appDetail: string | null
@@ -263,7 +270,6 @@ export interface ProcessSettings {
   timeoutSeconds: number
   excludeMachines: string | null
   updatedAt: string | null
-  targetPrograms: string | null
 }
 
 /** password は null（変更なし）・''（クリア）・新しい値 */
@@ -274,7 +280,6 @@ export interface ProcessSettingsInput {
   dnsSuffix: string | null
   timeoutSeconds: number
   excludeMachines: string | null
-  targetPrograms: string | null
 }
 
 export class ApiError extends Error {}

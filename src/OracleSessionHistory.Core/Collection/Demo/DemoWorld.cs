@@ -22,6 +22,8 @@ public sealed class DemoWorld
         new("APSV01", "w3wp.exe", "WEBAPP", "IIS APPPOOL\\Koukai", null, "client", 8),
         new("APSV02", "w3wp.exe", "WEBAPP", "IIS APPPOOL\\Koukai", null, "client", 6),
         new("BATCHSV", "JP1Batch.exe", "BATCH", "jp1admin", "夜間集計", "client", 2),
+        new("BATCHSV02", "sqlplus.exe", "BATCH", "jp1admin", "SQL*Plus", "client", 2, "SQL*PLUS"),
+        new("OPE-PC01", "sqlplus.exe", "OPE", "ope01", "SQL*Plus", "client", 1, "SQL*PLUS"),
         new("DEV-PC07", "sqlplus.exe", "SYSTEM", "dev07", "SQL*Plus", "client", 1, "SQL*PLUS"),
         new("DEV-PC08", "SQL Developer", "SALES", "dev08", "SQL Developer", "client", 1, "jdbcthin"),
         // このシステム自身の接続（既定で一覧に出ないことを確認する）

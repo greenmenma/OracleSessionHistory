@@ -139,6 +139,8 @@ public sealed class CollectionServiceTests : IDisposable
         var sessionId = await db2.Sessions.Select(s => s.Id).SingleAsync();
         Assert.All(usages, u => Assert.Equal(sessionId, u.MatchedSessionId));
         Assert.All(usages, u => Assert.Equal(2, u.HitCount));
+        var session = await db2.Sessions.SingleAsync();
+        Assert.Equal(("KIKAN-AP01", "受注入力.exe"), (session.LinkOriginMachine, session.LinkOriginApp));
     }
 
     [Fact]

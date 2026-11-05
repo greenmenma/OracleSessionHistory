@@ -53,15 +53,34 @@ public static partial class ClientProcessRules
     /// <summary>ホスト名が対象外端末パターン（カンマ区切り、* はワイルドカード、大文字小文字無視）に一致するか</summary>
     public static bool IsExcluded(string host, string? patterns) => MatchesAny(host, patterns);
 
+    [GeneratedRegex(@"(?<=^|[\s""'=])([A-Za-z0-9_$#.\-]+)/([^\s""'/@]+)(?=(@)?)", RegexOptions.CultureInvariant)]
+    private static partial Regex UserPassword();
+
+    [GeneratedRegex(@"\b(sqlplus|sqlldr|exp|imp|expdp|impdp|rman|dgmgrl|tkprof)(\.exe)?\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex OracleTool();
+
+    public const string PasswordMask = "********";
+
+    /// <summary>Oracle のツール（sqlplus 等）の実行ファイル名・コマンドラインか</summary>
+    public static bool IsOracleTool(string? value) => !string.IsNullOrEmpty(value) && OracleTool().IsMatch(value);
+
     /// <summary>
-    /// PROGRAM がプロセス情報を取得する実行ファイルのパターン（カンマ区切り、* はワイルドカード、大文字小文字無視）に一致するか。
-    /// PROGRAM がパス付きの場合はファイル名でも比較する。パターンが空なら一致しない。
+    /// コマンドラインの「ユーザ/パスワード」のパスワードを隠す（sqlplus scott/tiger@db 等。保存・表示する前に必ず通す）。
+    /// 接続先（@）が続くもの、または Oracle のツール（sqlplus 等）のコマンドラインの場合に隠す。
+    /// それ以外（bin/app.dll 等の相対パス）は変えない。
     /// </summary>
-    public static bool IsTargetProgram(string? program, string? patterns)
+    /// <param name="oracleTool">Oracle のツールを起動した親プロセスのコマンドライン（バッチの引数に渡す場合など）</param>
+    public static string? MaskCredentials(string? commandLine, bool oracleTool = false)
     {
-        if (string.IsNullOrWhiteSpace(program)) return false;
-        var prog = program.Trim();
-        return MatchesAny(prog, patterns) || MatchesAny(FileNameOf(prog), patterns);
+        if (string.IsNullOrEmpty(commandLine)) return commandLine;
+        var tool = oracleTool || IsOracleTool(commandLine);
+        return UserPassword().Replace(commandLine, m =>
+        {
+            var end = m.Index + m.Length;
+            var hasConnect = end < commandLine.Length && commandLine[end] == '@';
+            var tokenEnds = end >= commandLine.Length || hasConnect || char.IsWhiteSpace(commandLine[end]) || commandLine[end] is '"' or '\'';
+            return tokenEnds && (tool || hasConnect) ? m.Groups[1].Value + "/" + PasswordMask : m.Value;
+        });
     }
 
     private static bool MatchesAny(string value, string? patterns)

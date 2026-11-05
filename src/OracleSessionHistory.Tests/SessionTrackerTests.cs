@@ -23,6 +23,28 @@ public class SessionTrackerTests
     };
 
     [Fact]
+    public void 端末名は前後の空白を除いて保存する()
+    {
+        var row = SessionTracker.Apply(1, [], Snap(T0, Obs(1) with { Machine = " PC01 " }), null, Interval).Added.Single();
+        Assert.Equal("PC01", row.Machine);
+    }
+
+    [Fact]
+    public void 再接続したクライアントは対象外にしたプロセス情報を取り直す()
+    {
+        var row = SessionTracker.Apply(1, [], Snap(T0, Obs(1)), null, Interval).Added.Single();
+        row.IsConnected = false;
+        row.ProcInfoState = ProcInfoStates.NotApplicable;
+        row.ProcInfoError = "切断までに取得できませんでした";
+
+        var r = SessionTracker.Apply(1, [row], Snap(T0.AddSeconds(5), Obs(1)), T0, Interval);
+
+        Assert.Single(r.Reconnected);
+        Assert.Equal(ProcInfoStates.Pending, row.ProcInfoState);
+        Assert.Null(row.ProcInfoError);
+    }
+
+    [Fact]
     public void このシステムのMODULEの新規セッションはSelfで取得対象外()
     {
         var r = SessionTracker.Apply(1, [], Snap(T0, Obs(1, program: "w3wp.exe") with { Module = "OracleSessionHistory" }), null, Interval);

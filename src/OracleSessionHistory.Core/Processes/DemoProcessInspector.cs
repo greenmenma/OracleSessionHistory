@@ -42,6 +42,21 @@ public sealed class DemoProcessInspector : IProcessInspector
         if (h == "DEV-PC08")
             return new(pid, "java.exe", @"C:\sqldeveloper\jdk\bin\java.exe", @"java.exe -Xmx1g -jar ""C:\sqldeveloper\sqldeveloper.jar""",
                 @"CORP\dev08", started, "sqldeveloper64W.exe", null, null);
+        // sqlplus.exe：夜間バッチ（JP1 から cmd でバッチを実行）と、運用担当がコマンドプロンプトで手で実行
+        if (h == "BATCHSV02")
+            return new(pid, "sqlplus.exe", @"C:\oracle\product\19.0.0\client_1\bin\sqlplus.exe",
+                @"sqlplus.exe -s batch/********@KOUKAI @D:\Batch\sql\monthly.sql", @"CORP\jp1admin", started, "cmd.exe", null, null,
+                [
+                    new(pid - 1, "cmd.exe", @"C:\Windows\system32\cmd.exe /c D:\Batch\月次集計.bat", started.AddSeconds(-2)),
+                    new(4100, "jp1ajs2.exe", @"""C:\Program Files\HITACHI\JP1AJS2\bin\jp1ajs2.exe""", started.AddDays(-10)),
+                ]);
+        if (h == "OPE-PC01")
+            return new(pid, "sqlplus.exe", @"C:\oracle\product\19.0.0\client_1\bin\sqlplus.exe", "sqlplus ope@KOUKAI",
+                @"CORP\ope01", started, "cmd.exe", null, null,
+                [
+                    new(pid - 1, "cmd.exe", @"""C:\Windows\system32\cmd.exe"" ", started.AddMinutes(-5)),
+                    new(5200, "explorer.exe", @"C:\Windows\Explorer.EXE", started.AddDays(-1)),
+                ]);
         // DB Link 接続元 DB を使っている端末（DemoWorld.LinkOrigins）
         if (h == "KIKAN-AP01")
             return new(pid, "w3wp.exe", @"c:\windows\system32\inetsrv\w3wp.exe",

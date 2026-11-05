@@ -64,6 +64,12 @@ public static class SessionTracker
                     row.DisconnectedAt = null;
                     row.DisconnectDetectedAt = null;
                     row.DisconnectUncertain = false;
+                    // 切断扱いの間に「取得前に切断」で対象外にしたプロセス情報は取り直す（対象外の理由は次の取得で判定し直す）
+                    if (row.ProcessKind == ProcessKinds.Client && row.ProcInfoState == ProcInfoStates.NotApplicable)
+                    {
+                        row.ProcInfoState = ProcInfoStates.Pending;
+                        row.ProcInfoError = null;
+                    }
                     result.Reconnected.Add(row);
                 }
                 CopyObserved(o, row, now);
@@ -114,7 +120,8 @@ public static class SessionTracker
         row.Username = o.Username;
         row.SchemaName = o.SchemaName;
         row.OsUser = o.OsUser;
-        row.Machine = o.Machine;
+        // 前後の空白は除く（接続アプリ表のまとめ方と完全一致の検索を、照合順序によらずそろえるため）
+        row.Machine = string.IsNullOrWhiteSpace(o.Machine) ? o.Machine?.Trim() : o.Machine.Trim();
         row.Terminal = o.Terminal;
         row.Program = o.Program;
         row.Module = o.Module ?? row.Module;

@@ -55,6 +55,7 @@ export default function SessionDetailPanel({ id, onClose }: { id: number; onClos
                   <Prop label="実行ユーザ" value={s.procOwner} />
                   <Prop label="プロセス開始" value={fmtDateTime(s.procStartedAt)} />
                   <Prop label="親プロセス" value={s.procParentName} />
+                  <Prop label="実行元" value={s.procAncestry} pre />
                 </>
               )}
             </dl>

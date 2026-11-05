@@ -91,6 +91,9 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
                     b.Property<string>("OsUser")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("ProcAncestry")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("ProcCommandLine")
                         .HasColumnType("nvarchar(max)");
 
@@ -303,9 +306,6 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
                     b.Property<string>("Password")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("TargetPrograms")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<int>("TimeoutSeconds")
                         .HasColumnType("int");
 
@@ -407,6 +407,14 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
                     b.Property<string>("LastSqlText")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("LinkOriginApp")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("LinkOriginMachine")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<DateTime>("LogonTime")
                         .HasColumnType("datetime2");
 
@@ -425,6 +433,9 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
 
                     b.Property<int?>("Port")
                         .HasColumnType("int");
+
+                    b.Property<string>("ProcAncestry")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("ProcCommandLine")
                         .HasColumnType("nvarchar(max)");
@@ -508,6 +519,8 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
                     b.HasIndex("Program");
 
                     b.HasIndex("IsConnected", "ProcInfoState");
+
+                    b.HasIndex("LinkOriginMachine", "LinkOriginApp");
 
                     b.HasIndex("TargetId", "IsConnected");
 

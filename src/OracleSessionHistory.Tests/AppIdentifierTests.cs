@@ -49,6 +49,62 @@ public class AppIdentifierTests
         Assert.Equal(("Foo.exe", @"D:\Apps\Foo"), AppIdentifier.Identify(p, "Foo.exe", null, null));
     }
 
+    private static ClientProcessInfo Sqlplus(params ParentProcessInfo[] ancestors) =>
+        new(200, "sqlplus.exe", @"C:\oracle\bin\sqlplus.exe", "sqlplus.exe scott/********@DB @x.sql", null, null,
+            ancestors.FirstOrDefault()?.Name, null, null, ancestors);
+
+    private static ParentProcessInfo Parent(string name, string? cmd) => new(1, name, cmd, null);
+
+    [Fact]
+    public void sqlplusはcmdで実行したバッチ()
+    {
+        var p = Sqlplus(Parent("cmd.exe", @"C:\Windows\system32\cmd.exe /c D:\Batch\月次集計.bat"), Parent("jp1ajs2.exe", "jp1ajs2.exe"));
+        Assert.Equal(("sqlplus.exe: 月次集計.bat", @"実行元: D:\Batch\月次集計.bat（cmd.exe ← jp1ajs2.exe）"),
+            AppIdentifier.Identify(p, "sqlplus.exe", "SQL*Plus", null));
+    }
+
+    [Fact]
+    public void sqlplusは空白を含むパスのバッチ()
+    {
+        var p = Sqlplus(Parent("cmd.exe", @"C:\Windows\system32\cmd.exe /c """"D:\My Batch\夜間.cmd"" arg"""));
+        Assert.Equal(("sqlplus.exe: 夜間.cmd", @"実行元: D:\My Batch\夜間.cmd（cmd.exe）"), AppIdentifier.Identify(p, "sqlplus.exe", null, null));
+    }
+
+    [Fact]
+    public void sqlplusを対話のcmdから実行した場合はcmd()
+    {
+        var p = Sqlplus(Parent("cmd.exe", @"""C:\Windows\system32\cmd.exe"" "), Parent("explorer.exe", @"C:\Windows\explorer.exe"));
+        Assert.Equal(("sqlplus.exe: cmd.exe", "実行元: cmd.exe ← explorer.exe"), AppIdentifier.Identify(p, "sqlplus.exe", null, null));
+    }
+
+    [Fact]
+    public void sqlplusをcmd経由で起動したプログラム()
+    {
+        var p = Sqlplus(Parent("cmd.exe", "cmd /c sqlplus scott/********@db @a.sql"), Parent("java.exe", "java -jar batch.jar"));
+        Assert.Equal(("sqlplus.exe: java.exe", "実行元: cmd.exe ← java.exe"), AppIdentifier.Identify(p, "sqlplus.exe", null, null));
+    }
+
+    [Fact]
+    public void sqlplusはPowerShellのスクリプト()
+    {
+        var p = Sqlplus(Parent("powershell.exe", @"powershell.exe -NoProfile -File D:\ps\run.ps1"), Parent("svchost.exe", null));
+        Assert.Equal(("sqlplus.exe: run.ps1", @"実行元: D:\ps\run.ps1（powershell.exe ← svchost.exe）"), AppIdentifier.Identify(p, "sqlplus.exe", null, null));
+    }
+
+    [Fact]
+    public void sqlplusでも実行元が取れなければ実行ファイル名とフォルダ()
+    {
+        Assert.Equal(("sqlplus.exe", @"C:\oracle\bin"), AppIdentifier.Identify(Sqlplus(), "sqlplus.exe", null, null));
+    }
+
+    [Fact]
+    public void 実行元はsqlplus以外では使わない()
+    {
+        var p = new ClientProcessInfo(1, "Foo.exe", @"D:\Apps\Foo\Foo.exe", null, null, null, "cmd.exe", null, null,
+            [Parent("cmd.exe", @"cmd /c D:\x.bat")]);
+        Assert.Equal(("Foo.exe", @"D:\Apps\Foo"), AppIdentifier.Identify(p, "Foo.exe", null, null));
+    }
+
     [Fact]
     public void パスが取れなければプロセス名()
     {
