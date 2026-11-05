@@ -35,6 +35,7 @@
 | `Sessions` | 追跡しているセッション。1 Oracle セッション = 1 行。`IsConnected=false` が履歴 |
 | `LinkSources` | DB Link 接続元 DB（接続文字列・監視する DB Link） |
 | `DbLinkUsages` | 接続元 DB で DB Link を使っていたセッション |
+| `ProcessInspectionSettings` | 接続元サーバーのプロセス情報取得の設定（1 行） |
 
 `Sessions` の一意キーは `(TargetId, InstId, Sid, Serial, LogonTime)` です。SID と SERIAL# は再利用されるため、ログオン時刻もキーに含めています。
 
@@ -61,6 +62,10 @@
 | Batch が停止していた | 再開後の初回で切断を検知するが、切断時刻は「推定」とする |
 | 切断扱いにした行が再び見えた | 1 時間以内なら同じ行を接続中に戻す |
 
+## 接続アプリの特定
+
+`Sessions` の `AppName`（一覧・集計のキー）は、Batch の `ProcessInfoCollector` → `ProcessInfoService` が接続元サーバーの WMI/CIM（`CimProcessInspector`）から取得したプロセス情報で確定します。セッション収集とは独立したループで、失敗してもセッションの記録には影響しません。詳細は [process-info.md](process-info.md)。
+
 ## Provider（データソースの種類）
 
 | Provider | 実装 | 用途 |
@@ -80,3 +85,6 @@
 | `ProgramClassifier` (Core) | PROGRAM からプロセス種別を判定 |
 | `OracleSessionSource` (Core) | Oracle の SQL |
 | `OracleDbLinkInspector` (Core) | DB Link 一覧・利用元の検索 |
+| `ProcessInfoCollector` (Batch) / `ProcessInfoService` (Core) | 接続元プロセス情報の定期取得・ホスト単位のバックオフ |
+| `CimProcessInspector` / `DemoProcessInspector` (Core) | WMI/CIM でのプロセス情報取得（Windows のみ）／デモ用 |
+| `AppIdentifier` / `ClientProcessRules` (Core) | アプリ名の決定、ホスト名・PID・プール名の抽出、誤紐付けの判定（純粋関数） |

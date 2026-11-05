@@ -15,6 +15,7 @@ description: Oracle からのセッション収集（gv$session の SQL、プロ
 | `src/OracleSessionHistory.Core/DbLinks/OracleDbLinkInspector.cs` | 接続元 DB の DB Link 一覧・利用セッションの検索 |
 | `src/OracleSessionHistory.Core/Services/CollectionService.cs` | 取得 → 追跡 → 保存 |
 | `docs/oracle-privileges.md` | 必要な権限 |
+| `src/OracleSessionHistory.Core/Processes/*` / `Services/ProcessInfoService.cs` | 接続元サーバーのプロセス情報（WMI/CIM）とアプリ名の決定（`docs/process-info.md`） |
 
 ## 守ること
 
@@ -23,7 +24,8 @@ description: Oracle からのセッション収集（gv$session の SQL、プロ
 3. 自分自身（監視用セッション）は `sys_context('USERENV','SID')` で除外する。
 4. SQL テキストは `gv$sqlarea` を **セッションが参照している sql_id に絞って** 取得する（共有プール全体を走査しない）。
 5. 新しい列を収集したら `ObservedSession` → `TrackedSession` → `SessionTracker.CopyObserved` → API DTO → `src/api.ts` → 画面 の順に追加する。
-6. 必要な権限が増えたら `docs/oracle-privileges.md` を更新する。
+6. 種別を変えたら、画面に既定で表示する種別（`ProcessKinds.Visible` と `SessionQueries.WhereVisible`）と、プロセス情報の取得対象（`SessionTracker` で Client のみ `Pending`）も確認する。
+7. 必要な権限が増えたら `docs/oracle-privileges.md` を更新する。
 
 ## プロセス種別を追加する
 

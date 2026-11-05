@@ -15,6 +15,9 @@ cd src/OracleSessionHistory.Client && npm run typecheck
 - `SessionTrackerTests`：同一セッションの更新、切断検知、インスタンス無応答時に切断しない、推定フラグ、復帰
 - `CollectionServiceTests`：SQLite インメモリでの取得失敗時の非切断、1 セッション 1 行、DB Link のプロセス一致
 - `ProgramClassifierTests`：ORACLE.EXE / Jnnn / Pnnn 等の分類
+- `AppIdentifierTests` / `ClientProcessRulesTests`：アプリ名の決定、ホスト名・PID・プール名の抽出、誤紐付けの判定
+- `ProcessInfoServiceTests` / `HostBackoffTests`：プロセス情報の取得・失敗時のバックオフ・対象外の判定
+- `ApiQueryTests`：Oracle 内部プロセスの既定除外、接続アプリ表の集計
 - `AppDbMigrationTests`：マイグレーションの追加漏れ、新規 DB への適用、`EnsureCreated` で作成した DB の引き継ぎ
 
 ## 監視対象の種類（Provider）を追加する
@@ -73,7 +76,9 @@ dotnet ef migrations add <名前> --project src/OracleSessionHistory.Migrations.
 | GET | `/api/summary?targetId=` | サマリー |
 | GET | `/api/sessions?...` | セッション履歴の検索 |
 | GET | `/api/sessions/{id}` | セッション詳細（DB Link 接続元を含む） |
-| GET | `/api/connection-counts?targetId=&q=` | 接続数表 |
+| GET | `/api/connection-counts?targetId=&q=` | 接続アプリ表（端末 × アプリ） |
+| GET/PUT | `/api/process-settings` | プロセス情報取得の設定（パスワードは返さない） |
+| POST | `/api/process-settings/test` | プロセス情報取得の接続テスト |
 | GET/POST | `/api/targets/{id}/link-sources` | DB Link 接続元の一覧・追加 |
 | PUT/DELETE | `/api/link-sources/{id}` | DB Link 接続元の更新・削除 |
 | POST | `/api/db-links` | 接続文字列から DB Link 一覧を取得 |

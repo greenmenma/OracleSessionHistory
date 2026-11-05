@@ -24,6 +24,7 @@ dotnet run --project src/OracleSessionHistory.AppHost
 - ログに出る Login URL で Aspire ダッシュボードを開き、`client` の URL から画面を開く。
 - 履歴 DB はリポジトリ直下の `.data/oraclesessionhistory.db`（SQLite）。`appsettings.json` はリリース用（SQL Server の仮の値）で、デバッグ時は AppHost / `launchSettings.json` が `AppDb__Provider=Sqlite` を指定している。`appsettings.Development.json` は使わない（リリース環境が 1 つのため）。
 - デバッグ起動時（`Collector__SeedDemoTarget=true`）は監視対象が無いと Batch が「デモDB」（Provider=Demo）と過去 2 ヶ月分の履歴を作成する。Oracle 無しで全画面を確認できる。
+- デモ登録時はプロセス情報の取得も有効になり、Demo の監視対象は疑似プロセス情報（`DemoProcessInspector`）を返す。
 - デモは 20 回に 1 回取得失敗を発生させる。失敗時に接続数が減らない（切断扱いにならない）ことを確認できる。
 
 ### Aspire を使わない場合
@@ -42,7 +43,9 @@ cd src/OracleSessionHistory.Client && npm run dev       # http://localhost:5173 
 - サマリー：接続数・アプリ数・端末数・履歴数が表示され、5 秒ごとに更新される
 - セッション履歴：検索条件なしで新しいログオン順に表示される。行クリックで詳細
 - ORACLE.EXE のセッションに「DB Linkの可能性」バッジ、詳細に接続元の説明
-- 接続数表：本日〜6日前・本日〜1ヶ月・1ヶ月〜2ヶ月の列
+- 接続アプリ：端末 × アプリ（`IIS: プール名` 等）で、本日〜6日前・本日〜1ヶ月・1ヶ月〜2ヶ月の列。Oracle 内部プロセス（ジョブ等）が出ないこと
+- セッション履歴：「アプリ」列にアプリ名と補足。デモでは `DEV-PC07` が「取得失敗」、`ORACLE.EXE (J000)` は「Oracle 内部プロセスも表示」で出る
+- 設定：「プロセス情報の取得」の保存（パスワード欄を触らずに保存しても保持される）。macOS では接続テストが「Windows のみ」になる
 - 設定：監視対象の追加・接続テスト、DB Link 接続元の追加 → 「DB Link 一覧を取得」→ 選択 → 保存
 - API の確認: `curl http://localhost:<client-port>/api/summary`
 - サブフォルダ配置の確認（IIS の代わり）: `dotnet publish src/OracleSessionHistory.Server -c Release -o <出力先>`（Client も wwwroot に配置される）後、出力先で `PathBase=/OracleSessionHistory` を指定して `dotnet OracleSessionHistory.Server.dll` を起動し、`/OracleSessionHistory/` で画面と API が動くこと
