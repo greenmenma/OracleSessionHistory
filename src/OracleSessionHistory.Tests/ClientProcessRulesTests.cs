@@ -53,6 +53,16 @@ public class ClientProcessRulesTests
         Assert.Equal(expected, ClientProcessRules.IsExcluded(host, patterns));
     }
 
+    [Theory]
+    [InlineData("1234", "JDBC Thin Client", null, true)]
+    [InlineData("1234", "java.exe", "jdbcthin", true)]
+    [InlineData("1234", "w3wp.exe", "ODP.NET Managed Driver", false)]
+    [InlineData("4321", "JDBC Thin Client", null, false)]
+    public void JDBC_Thinの既定のPROCESSは偽のPID(string process, string program, string? driver, bool expected)
+    {
+        Assert.Equal(expected, ClientProcessRules.IsDriverDefaultProcess(process, program, driver));
+    }
+
     private static readonly DateTime Logon = new(2026, 11, 5, 9, 0, 0);
 
     private static ClientProcessInfo Proc(string name, DateTime? started) =>

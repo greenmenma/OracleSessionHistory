@@ -55,6 +55,8 @@ public sealed class ProcessInfoService(
             var pid = ClientProcessRules.ProcessIdOf(r.Row.ClientProcess);
             string? reason = host is null ? "端末名（MACHINE）がありません"
                 : pid is null ? $"PROCESS（{r.Row.ClientProcess}）からプロセス ID を取得できません"
+                : ClientProcessRules.IsDriverDefaultProcess(r.Row.ClientProcess, r.Row.Program, r.Row.ClientDriver)
+                    ? "JDBC Thin ドライバの既定値（PROCESS=1234）のため、プロセスを特定できません"
                 : ClientProcessRules.IsExcluded(host, settings.ExcludeMachines) ? "対象外端末に指定されています"
                 : null;
             if (reason is not null)
@@ -126,8 +128,29 @@ public sealed class ProcessInfoService(
             }
         }
 
-        await db.SaveChangesAsync(ct);
+        await SaveSkippingDeletedAsync(db, ct);
         return new ProcessInfoOutcome(resolved, failed, skipped);
+    }
+
+    /// <summary>
+    /// 保存する。取得中に監視対象の削除・履歴の削除で行が消えていた場合は、その行を除いて保存し直す
+    /// （1 行のためにその回の結果をすべて失わないようにする）。
+    /// </summary>
+    private async Task SaveSkippingDeletedAsync(AppDbContext db, CancellationToken ct)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                return;
+            }
+            catch (DbUpdateConcurrencyException ex) when (attempt < 3)
+            {
+                logger.LogDebug(ex, "プロセス情報の保存中に削除されたセッションがあったため、除いて保存し直します");
+                foreach (var entry in ex.Entries) entry.State = EntityState.Detached;
+            }
+        }
     }
 
     /// <summary>設定画面の接続テスト</summary>

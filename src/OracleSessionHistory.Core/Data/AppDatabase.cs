@@ -36,6 +36,7 @@ public static class AppDatabase
         var provider = ResolveProvider(configuration);
         var cs = ResolveConnectionString(configuration, provider);
         services.AddDbContextFactory<AppDbContext>(o => Configure(o, provider, cs));
+        services.AddSingleton<AppDatabaseReadiness>();
         return services;
     }
 
@@ -206,6 +207,7 @@ public static class AppDatabase
                     }
                     logger.LogInformation("デモ用の監視対象を登録しました");
                 }
+                sp.GetService<AppDatabaseReadiness>()?.MarkReady();
                 return;
             }
             catch (Exception ex) when (attempt < 10 && !ct.IsCancellationRequested)

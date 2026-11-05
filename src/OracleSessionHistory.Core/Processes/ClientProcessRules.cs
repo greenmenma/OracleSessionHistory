@@ -31,6 +31,15 @@ public static partial class ClientProcessRules
         return int.TryParse(head, out var pid) && pid > 0 ? pid : null;
     }
 
+    /// <summary>
+    /// ドライバが実際の PID の代わりに固定値を入れているか。JDBC Thin ドライバは既定で PROCESS に "1234" を設定する
+    /// （v$session.process を設定しない場合）。存在しないか別のプロセスの PID になるため問い合わせない。
+    /// </summary>
+    public static bool IsDriverDefaultProcess(string? clientProcess, string? program, string? clientDriver) =>
+        clientProcess?.Trim() == "1234"
+        && ((program?.Contains("JDBC", StringComparison.OrdinalIgnoreCase) ?? false)
+            || (clientDriver?.Contains("jdbc", StringComparison.OrdinalIgnoreCase) ?? false));
+
     /// <summary>w3wp.exe のコマンドラインからアプリケーションプール名（-ap の値）を取り出す</summary>
     public static string? AppPoolOf(string? commandLine)
     {

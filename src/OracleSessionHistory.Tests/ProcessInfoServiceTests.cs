@@ -17,12 +17,13 @@ public sealed class ProcessInfoServiceTests : IDisposable
     private readonly FakeInspector _inspector = new();
     private readonly ProcessInfoService _service;
     private readonly int _targetId;
+    private readonly BeforeNextSaveInterceptor _beforeSave = new();
 
     public ProcessInfoServiceTests()
     {
         _conn.Open();
         _factory = new TestDbFactory(new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(_conn, o => o.MigrationsAssembly(AppDatabase.SqliteMigrationsAssembly)).Options);
+            .UseSqlite(_conn, o => o.MigrationsAssembly(AppDatabase.SqliteMigrationsAssembly)).AddInterceptors(_beforeSave).Options);
         using var db = _factory.CreateDbContext();
         db.Database.Migrate();
         var t = new MonitorTarget { Name = "T", Provider = SourceProviders.Oracle, ConnectionString = "x" };
@@ -218,6 +219,34 @@ public sealed class ProcessInfoServiceTests : IDisposable
         await _service.RunOnceAsync(default);
 
         Assert.Equal(ProcInfoStates.Resolved, Get(fresh).ProcInfoState);
+    }
+
+    [Fact]
+    public async Task 取得中に行が削除されても他の行の結果は保存する()
+    {
+        var deleted = AddSession(1, "WEB01", "1");
+        var kept = AddSession(2, "WEB01", "2");
+        _inspector.Results["WEB01"] = [W3wp(1, "Foo"), W3wp(2, "Foo")];
+        _beforeSave.Arm($"DELETE FROM Sessions WHERE Id = {deleted}");
+
+        await _service.RunOnceAsync(default);
+
+        using var db = _factory.CreateDbContext();
+        Assert.False(await db.Sessions.AnyAsync(s => s.Id == deleted));
+        Assert.Equal(ProcInfoStates.Resolved, Get(kept).ProcInfoState);
+    }
+
+    [Fact]
+    public async Task JDBCの既定のPROCESSは問い合わせず理由を残す()
+    {
+        var id = AddSession(1, "APP01", "1234", program: "JDBC Thin Client");
+
+        await _service.RunOnceAsync(default);
+
+        var s = Get(id);
+        Assert.Equal(ProcInfoStates.NotApplicable, s.ProcInfoState);
+        Assert.Contains("JDBC", s.ProcInfoError);
+        Assert.Empty(_inspector.Calls);
     }
 
     private sealed class TestDbFactory(DbContextOptions<AppDbContext> options) : IDbContextFactory<AppDbContext>
