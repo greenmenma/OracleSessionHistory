@@ -256,6 +256,9 @@ public static class DemoHistory
                         ProcOwner = proc?.Owner,
                         ProcStartedAt = proc?.StartedAt,
                         ProcParentName = proc?.ParentName,
+                        ProcAncestry = proc?.Ancestors is { Count: > 0 } ancestors
+                            ? string.Join("\n", ancestors.Select(x => string.IsNullOrWhiteSpace(x.CommandLine) ? x.Name : $"{x.Name}: {x.CommandLine}"))
+                            : null,
                         IisAppPool = proc?.IisAppPool,
                         IisSite = proc?.IisSite,
                         ClientProcess = pid.ToString(),

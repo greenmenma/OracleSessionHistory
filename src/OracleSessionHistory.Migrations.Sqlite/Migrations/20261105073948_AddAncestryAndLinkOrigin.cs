@@ -10,9 +10,6 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropColumn(
-                name: "TargetPrograms",
-                table: "ProcessInspectionSettings");
 
             migrationBuilder.AddColumn<string>(
                 name: "LinkOriginApp",
@@ -61,6 +58,9 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
 
             // DB Link の可能性があるセッションに、特定済みの接続元の端末・アプリを入れる
             migrationBuilder.Sql(@"UPDATE Sessions SET LinkOriginMachine = (SELECT u.Machine FROM DbLinkUsages u WHERE u.MatchedSessionId = Sessions.Id ORDER BY u.LastSeenAt DESC, u.Id DESC LIMIT 1), LinkOriginApp = (SELECT u.AppName FROM DbLinkUsages u WHERE u.MatchedSessionId = Sessions.Id ORDER BY u.LastSeenAt DESC, u.Id DESC LIMIT 1) WHERE EXISTS (SELECT 1 FROM DbLinkUsages u WHERE u.MatchedSessionId = Sessions.Id)");
+
+            // SQLite の DropColumn はテーブルを作り直す（トランザクション外の PRAGMA が必要になり警告が出る）ため、DROP COLUMN（SQLite 3.35 以降）で削除する
+            migrationBuilder.Sql("ALTER TABLE ProcessInspectionSettings DROP COLUMN TargetPrograms");
         }
 
         /// <inheritdoc />
