@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { useAsync } from '../hooks'
 import { fmtDateTime, fmtDuration, internalKinds, kindLabels } from '../format'
@@ -58,9 +58,13 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [selected, setSelected] = useState<number>()
 
-  // サマリー等からの遷移でクエリが変わった場合は条件を置き換える
+  // サマリー等からの遷移でクエリが変わった場合は条件を置き換える。
+  // 自分で検索条件を URL に書いた（replaceQuery）だけの場合は、入力途中のフォームを消さないよう何もしない
+  const filtersRef = useRef(filters)
+  filtersRef.current = filters
   useEffect(() => {
     const f = fromQuery(new URLSearchParams(queryKey))
+    if (JSON.stringify(f) === JSON.stringify(filtersRef.current)) return
     setForm(f)
     setFilters(f)
     setPage(1)

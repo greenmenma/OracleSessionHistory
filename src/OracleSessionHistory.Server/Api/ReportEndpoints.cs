@@ -57,7 +57,9 @@ public static class ReportEndpoints
             var topMachines = (await connected.GroupBy(s => s.Machine)
                 .Select(x => new { x.Key, Count = x.Count() })
                 .OrderByDescending(x => x.Count).Take(10).ToListAsync())
-                .Select(x => new NameCount(x.Key ?? "(不明)", x.Count)).ToList();
+                // 空の端末名も「(不明)」にまとめる（一覧へ遷移したとき完全一致で端末なしの行を開けるように）
+                .GroupBy(x => string.IsNullOrEmpty(x.Key) ? SessionEndpoints.UnknownMachine : x.Key)
+                .Select(x => new NameCount(x.Key, x.Sum(y => y.Count))).OrderByDescending(x => x.Count).ToList();
 
             return new SummaryResult(
                 await connected.CountAsync(),

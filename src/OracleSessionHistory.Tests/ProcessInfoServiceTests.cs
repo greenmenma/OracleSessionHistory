@@ -237,6 +237,19 @@ public sealed class ProcessInfoServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task 取得中に多くの行が削除されても残りの行の結果は保存する()
+    {
+        var ids = Enumerable.Range(1, 6).Select(i => AddSession(i, "WEB01", i.ToString())).ToList();
+        _inspector.Results["WEB01"] = Enumerable.Range(1, 6).Select(i => W3wp(i, "Foo")).ToList();
+        // 監視対象の削除などで、接続中のセッションがまとめて消えた状況
+        _beforeSave.Arm($"DELETE FROM Sessions WHERE Id IN ({string.Join(",", ids.Take(5))})");
+
+        await _service.RunOnceAsync(default);
+
+        Assert.Equal(ProcInfoStates.Resolved, Get(ids[5]).ProcInfoState);
+    }
+
+    [Fact]
     public async Task JDBCの既定のPROCESSは問い合わせず理由を残す()
     {
         var id = AddSession(1, "APP01", "1234", program: "JDBC Thin Client");

@@ -138,18 +138,19 @@ public sealed class ProcessInfoService(
     /// </summary>
     private async Task SaveSkippingDeletedAsync(AppDbContext db, CancellationToken ct)
     {
-        for (var attempt = 1; ; attempt++)
+        try
         {
-            try
-            {
-                await db.SaveChangesAsync(ct);
-                return;
-            }
-            catch (DbUpdateConcurrencyException ex) when (attempt < 3)
-            {
-                logger.LogDebug(ex, "プロセス情報の保存中に削除されたセッションがあったため、除いて保存し直します");
-                foreach (var entry in ex.Entries) entry.State = EntityState.Detached;
-            }
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            // 例外に含まれるのは最初に失敗した行（バッチ）だけなので、消えた行をまとめて調べて除く
+            logger.LogDebug(ex, "プロセス情報の保存中に削除されたセッションがあったため、除いて保存し直します");
+            var pending = db.ChangeTracker.Entries<TrackedSession>().Where(e => e.State == EntityState.Modified).ToList();
+            var ids = pending.Select(e => e.Entity.Id).ToList();
+            var existing = (await db.Sessions.AsNoTracking().Where(s => ids.Contains(s.Id)).Select(s => s.Id).ToListAsync(ct)).ToHashSet();
+            foreach (var e in pending.Where(e => !existing.Contains(e.Entity.Id))) e.State = EntityState.Detached;
+            await db.SaveChangesAsync(ct);
         }
     }
 

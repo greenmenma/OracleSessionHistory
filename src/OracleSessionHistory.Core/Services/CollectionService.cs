@@ -61,7 +61,7 @@ public sealed class CollectionService(
         target.LastSessionCount = snapshot.Sessions.Count;
         target.LastError = snapshot.Warnings.Count > 0 ? "（警告）" + string.Join(" / ", snapshot.Warnings) : null;
         await db.SaveChangesAsync(ct);
-        await ApplyAppNameChangesAsync(db, appNameChanges, ct);
+        await ApplyAppNameChangesAsync(db, target.Name, appNameChanges, ct);
 
         if (result.Added.Count > 0 || result.Disconnected.Count > 0)
             logger.LogInformation("[{Target}] 取得 {Observed} 件 / 新規 {Added} 件 / 切断 {Disconnected} 件",
@@ -90,14 +90,27 @@ public sealed class CollectionService(
         return changes;
     }
 
-    /// <summary>仮のアプリ名の変更を、プロセス情報で確定していない行にだけ反映する</summary>
-    private static async Task ApplyAppNameChangesAsync(AppDbContext db, List<(long Id, string AppName, string? AppDetail)> changes, CancellationToken ct)
+    /// <summary>
+    /// 仮のアプリ名の変更を、プロセス情報で確定していない行にだけ反映する（同じ値の行はまとめて更新）。
+    /// 表示用の補助情報のため、失敗してもセッションの取得自体は成功として扱う。
+    /// </summary>
+    private async Task ApplyAppNameChangesAsync(AppDbContext db, string targetName,
+        List<(long Id, string AppName, string? AppDetail)> changes, CancellationToken ct)
     {
-        foreach (var (id, name, detail) in changes)
+        try
         {
-            await db.Sessions
-                .Where(s => s.Id == id && s.ProcInfoState != ProcInfoStates.Resolved)
-                .ExecuteUpdateAsync(u => u.SetProperty(s => s.AppName, name).SetProperty(s => s.AppDetail, detail), ct);
+            foreach (var g in changes.GroupBy(c => (c.AppName, c.AppDetail)))
+            {
+                var ids = g.Select(c => c.Id).ToList();
+                var (name, detail) = g.Key;
+                await db.Sessions
+                    .Where(s => ids.Contains(s.Id) && s.ProcInfoState != ProcInfoStates.Resolved)
+                    .ExecuteUpdateAsync(u => u.SetProperty(s => s.AppName, name).SetProperty(s => s.AppDetail, detail), ct);
+            }
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "[{Target}] アプリ名の更新に失敗しました（次回の取得で再度反映します）", targetName);
         }
     }
 
