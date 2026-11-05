@@ -110,10 +110,12 @@ public static class SessionEndpoints
         if (!string.IsNullOrWhiteSpace(s.Machine))
         {
             var m = s.Machine.Trim();
-            // 完全一致：接続アプリ表から遷移した場合（部分一致だと WEB01 で WEB011 も出てしまう）
+            // 完全一致：接続アプリ表から遷移した場合（部分一致だと WEB01 で WEB011 も出てしまう）。
+            // 前後の空白・大文字小文字は区別しない（SQL Server の既定の照合順序・集計と同じ結果にする）
+            var upper = m.ToUpperInvariant();
             q = !s.Exact ? q.Where(x => EF.Functions.Like(x.Machine, QueryHelpers.Contains(m), "\\"))
-                : m == UnknownMachine ? q.Where(x => x.Machine == null || x.Machine == "")
-                : q.Where(x => x.Machine == m);
+                : m == UnknownMachine ? q.Where(x => x.Machine == null || x.Machine.Trim() == "")
+                : q.Where(x => x.Machine!.Trim().ToUpper() == upper);
         }
         if (!string.IsNullOrWhiteSpace(s.Program)) q = q.Where(x => EF.Functions.Like(x.Program, QueryHelpers.Contains(s.Program.Trim()), "\\"));
         if (!string.IsNullOrWhiteSpace(s.Username)) q = q.Where(x => EF.Functions.Like(x.Username, QueryHelpers.Contains(s.Username.Trim()), "\\"));
@@ -125,7 +127,9 @@ public static class SessionEndpoints
         if (!string.IsNullOrWhiteSpace(s.App))
         {
             var app = s.App.Trim();
-            q = s.Exact ? q.Where(x => x.AppName == app) : q.Where(x => EF.Functions.Like(x.AppName, QueryHelpers.Contains(app), "\\"));
+            var upper = app.ToUpperInvariant();
+            q = s.Exact ? q.Where(x => x.AppName.Trim().ToUpper() == upper)
+                : q.Where(x => EF.Functions.Like(x.AppName, QueryHelpers.Contains(app), "\\"));
         }
         // Oracle 内部プロセス（ジョブ・パラレル実行等）は既定で表示しない。種別を明示した場合はそれに従う
         if (!string.IsNullOrWhiteSpace(s.Kind)) q = q.Where(x => x.ProcessKind == s.Kind);

@@ -177,7 +177,7 @@ public sealed class ProcessInfoServiceTests : IDisposable
         await _service.RunOnceAsync(default);
 
         Assert.Empty(_inspector.Calls);
-        Assert.Equal(ProcInfoStates.Pending, Get(id).ProcInfoState);
+        Assert.Equal(ProcInfoStates.NotApplicable, Get(id).ProcInfoState); // 「取得待ち」のまま表示し続けない
     }
 
     [Fact]
@@ -299,6 +299,46 @@ public sealed class ProcessInfoServiceTests : IDisposable
     {
         using var db = _factory.CreateDbContext();
         db.ProcessInspectionSettings.ExecuteUpdate(x => x.SetProperty(s => s.TargetPrograms, patterns));
+    }
+
+    [Fact]
+    public async Task 取得が無効の間は未取得の行を対象外にする()
+    {
+        using (var db = _factory.CreateDbContext())
+            db.ProcessInspectionSettings.ExecuteUpdate(x => x.SetProperty(s => s.Enabled, false));
+        var session = AddSession(1, "WEB01", "1");
+        var usage = AddUsage(1, "KIKAN-AP01", "2", "w3wp.exe");
+
+        await _service.RunOnceAsync(default);
+
+        Assert.Empty(_inspector.Calls);
+        Assert.Equal(ProcInfoStates.NotApplicable, Get(session).ProcInfoState);
+        Assert.Contains("無効", Get(session).ProcInfoError);
+        Assert.Equal(ProcInfoStates.NotApplicable, GetUsage(usage).ProcInfoState);
+
+        // 有効にして保存すると調べ直す
+        using (var db = _factory.CreateDbContext())
+        {
+            db.ProcessInspectionSettings.ExecuteUpdate(x => x.SetProperty(s => s.Enabled, true));
+            await ProcessInfoService.RequeueSkippedAsync(db, default);
+        }
+        _inspector.Results["WEB01"] = [W3wp(1, "Foo")];
+        await _service.RunOnceAsync(default);
+        Assert.Equal(ProcInfoStates.Resolved, Get(session).ProcInfoState);
+    }
+
+    [Fact]
+    public async Task 取得前に切断したセッションは取得待ちのまま残さない()
+    {
+        var pending = AddSession(1, "WEB01", "1", connected: false);
+        var failed = AddSession(2, "WEB01", "2", connected: false, state: ProcInfoStates.Failed);
+
+        await _service.RunOnceAsync(default);
+
+        Assert.Equal(ProcInfoStates.NotApplicable, Get(pending).ProcInfoState);
+        Assert.Contains("切断", Get(pending).ProcInfoError);
+        // 失敗の理由は残す
+        Assert.Equal(ProcInfoStates.Failed, Get(failed).ProcInfoState);
     }
 
     [Fact]

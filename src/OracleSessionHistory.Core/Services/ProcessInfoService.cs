@@ -40,6 +40,7 @@ public sealed class ProcessInfoService(
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var settings = await db.ProcessInspectionSettings.AsNoTracking()
             .SingleOrDefaultAsync(s => s.Id == ProcessInspectionSettings.SingletonId, ct);
+        await CloseUnreachableAsync(db, settings is { Enabled: true }, ct);
         if (settings is not { Enabled: true }) return new ProcessInfoOutcome(0, 0, 0);
         var options = ToOptions(settings);
         WarnIfNoTargetPrograms(settings);
@@ -228,6 +229,37 @@ public sealed class ProcessInfoService(
                 .SetProperty(u => u.ProcInfoState, ProcInfoStates.Pending)
                 .SetProperty(u => u.ProcInfoError, (string?)null), ct);
         return n;
+    }
+
+    /// <summary>
+    /// 取得しないまま「取得待ち」と表示され続ける行に理由を付けて終える。
+    /// ・取得前に切断したセッション（切断後は PID が再利用されるため調べない）
+    /// ・取得が無効の間の行（有効にして保存すると <see cref="RequeueSkippedAsync"/> で調べ直す）
+    /// </summary>
+    private static async Task CloseUnreachableAsync(AppDbContext db, bool enabled, CancellationToken ct)
+    {
+        var now = DateTime.Now;
+        await db.Sessions
+            .Where(s => !s.IsConnected && s.ProcInfoState == ProcInfoStates.Pending)
+            .ExecuteUpdateAsync(x => x
+                .SetProperty(s => s.ProcInfoState, ProcInfoStates.NotApplicable)
+                .SetProperty(s => s.ProcInfoError, "切断までに取得できませんでした")
+                .SetProperty(s => s.ProcInfoAt, now), ct);
+        if (enabled) return;
+
+        const string disabled = "プロセス情報の取得が無効です";
+        await db.Sessions
+            .Where(s => s.ProcInfoState == ProcInfoStates.Pending)
+            .ExecuteUpdateAsync(x => x
+                .SetProperty(s => s.ProcInfoState, ProcInfoStates.NotApplicable)
+                .SetProperty(s => s.ProcInfoError, disabled)
+                .SetProperty(s => s.ProcInfoAt, now), ct);
+        await db.DbLinkUsages
+            .Where(u => u.ProcInfoState == ProcInfoStates.Pending)
+            .ExecuteUpdateAsync(x => x
+                .SetProperty(u => u.ProcInfoState, ProcInfoStates.NotApplicable)
+                .SetProperty(u => u.ProcInfoError, disabled)
+                .SetProperty(u => u.ProcInfoAt, now), ct);
     }
 
     private bool _warnedNoTargetPrograms;

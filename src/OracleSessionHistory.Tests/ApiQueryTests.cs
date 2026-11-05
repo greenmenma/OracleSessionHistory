@@ -128,6 +128,31 @@ public sealed class ApiQueryTests : IDisposable
     }
 
     [Fact]
+    public void 完全一致は前後の空白と大文字小文字を区別しない()
+    {
+        // SQL Server（既定の照合順序）と同じ結果にする
+        Add(ProcessKinds.Client, machine: " web01 ", app: "IIS: pool");
+        Add(ProcessKinds.Client, machine: "WEB011", app: "IIS: Pool");
+
+        var rows = SessionEndpoints.Filter(_db.Sessions,
+            new SessionSearch(null, null, null, "WEB01", null, null, null, null, null, null, App: "IIS: Pool ", Exact: true)).ToList();
+
+        Assert.Equal(" web01 ", rows.Single().Machine);
+    }
+
+    [Fact]
+    public void 完全一致で端末が不明の場合は空白だけの端末も含む()
+    {
+        Add(ProcessKinds.Client, machine: "  ", app: "IIS: Pool");
+        Add(ProcessKinds.Client, machine: "WEB01", app: "IIS: Pool");
+
+        var rows = SessionEndpoints.Filter(_db.Sessions,
+            new SessionSearch(null, null, null, SessionEndpoints.UnknownMachine, null, null, null, null, null, null, App: "IIS: Pool", Exact: true)).ToList();
+
+        Assert.Equal("  ", rows.Single().Machine);
+    }
+
+    [Fact]
     public void 完全一致で端末が不明の場合は端末の無い行()
     {
         Add(ProcessKinds.Client, machine: "", app: "IIS: Pool");
@@ -172,6 +197,19 @@ public class ApiQuerySqlServerTests
         var sql = SessionEndpoints.Filter(db.Sessions,
             new SessionSearch(1, "connected", "foo", "WEB", null, null, "user", null, null, null, App: "IIS")).ToQueryString();
         Assert.Contains("[s].[ProcessKind] IN (N'Client', N'DbLinkSuspect')", sql);
+    }
+
+    [Fact]
+    public void 完全一致の検索はSqlServerでも変換できる()
+    {
+        using var db = new AppDbContext((DbContextOptions<AppDbContext>)AppDatabase.Configure(new DbContextOptionsBuilder<AppDbContext>(),
+            AppDbProviders.SqlServer, "Server=localhost;Database=x;Integrated Security=true;TrustServerCertificate=true").Options);
+        var sql = SessionEndpoints.Filter(db.Sessions,
+            new SessionSearch(null, null, null, "WEB01", null, null, null, null, null, null, App: "IIS: Pool", Exact: true)).ToQueryString();
+        Assert.Contains("UPPER(", sql);
+        var unknown = SessionEndpoints.Filter(db.Sessions,
+            new SessionSearch(null, null, null, SessionEndpoints.UnknownMachine, null, null, null, null, null, null, Exact: true)).ToQueryString();
+        Assert.Contains("[s].[Machine] IS NULL", unknown);
     }
 
     [Fact]
