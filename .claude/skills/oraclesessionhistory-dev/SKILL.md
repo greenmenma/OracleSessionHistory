@@ -46,6 +46,9 @@ cd src/OracleSessionHistory.Client && npm run dev       # http://localhost:5173 
 - 接続アプリ：端末 × アプリ（`IIS: プール名` 等）で、本日〜6日前・本日〜1ヶ月・1ヶ月〜2ヶ月の列。Oracle 内部プロセス（ジョブ等）が出ないこと
 - セッション履歴：「アプリ」列にアプリ名と補足。デモでは `DEV-PC07` が「取得失敗」、`ORACLE.EXE (J000)` は「Oracle 内部プロセスも表示」で出る
 - 設定：「プロセス情報の取得」の保存（パスワード欄を触らずに保存しても保持される）。macOS では接続テストが「Windows のみ」になる
+- 設定：「取得する実行ファイル」に未登録の PROGRAM は「対象外」になる（デモでは 会計システム.exe・sqlplus.exe）。追加して保存すると調べ直される
+- セッション履歴：このシステム自身の接続（デモでは `OracleSessionHistory.Batch.exe`）は既定で出ない
+- DB Link 利用元：DB Link 接続元（Provider=Demo）を登録すると、「実行アプリ」に `IIS: JuchuWeb` 等が出る。セッション履歴の `ORACLE.EXE` の行に「DB Link 経由: アプリ（端末）」
 - 設定：監視対象の追加・接続テスト、DB Link 接続元の追加 → 「DB Link 一覧を取得」→ 選択 → 保存
 - API の確認: `curl http://localhost:<client-port>/api/summary`
 - サブフォルダ配置の確認（IIS の代わり）: `dotnet publish src/OracleSessionHistory.Server -c Release -o <出力先>`（Client も wwwroot に配置される）後、出力先で `PathBase=/OracleSessionHistory` を指定して `dotnet OracleSessionHistory.Server.dll` を起動し、`/OracleSessionHistory/` で画面と API が動くこと

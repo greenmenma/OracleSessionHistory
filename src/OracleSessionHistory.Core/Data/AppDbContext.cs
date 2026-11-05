@@ -66,6 +66,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => x.MatchedSessionId);
             e.Property(x => x.DbLinkName).HasMaxLength(256);
             e.Property(x => x.MatchType).HasMaxLength(30);
+            e.Property(x => x.AppName).HasMaxLength(256);
+            e.Property(x => x.ProcInfoState).HasMaxLength(20);
+            e.Property(x => x.IisAppPool).HasMaxLength(256);
+            e.HasIndex(x => new { x.ProcInfoState, x.LastSeenAt });
             e.HasOne(x => x.LinkSource).WithMany().HasForeignKey(x => x.LinkSourceId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.MatchedSession).WithMany(s => s.DbLinkOrigins).HasForeignKey(x => x.MatchedSessionId)
                 // SQL Server は監視対象からの連鎖経路が 2 つになるため DB 側の SET NULL を使えない。

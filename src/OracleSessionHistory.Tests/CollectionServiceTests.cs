@@ -142,6 +142,53 @@ public sealed class CollectionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DBLink接続元のクライアントPIDと仮のアプリ名を記録する()
+    {
+        _source.Next = [Obs(1, "ORACLE.EXE", "3120:4410")];
+        await _service.PollSessionsAsync(_targetId, default);
+        using (var db = _factory.CreateDbContext())
+        {
+            db.LinkSources.Add(new LinkSource { TargetId = _targetId, Name = "基幹DB", Provider = "Fake", ConnectionString = "y" });
+            await db.SaveChangesAsync();
+        }
+
+        await _service.PollLinkSourcesAsync(_targetId, default);
+
+        using var db2 = _factory.CreateDbContext();
+        var u = await db2.DbLinkUsages.SingleAsync();
+        Assert.Equal("5120:88", u.ClientProcess);
+        Assert.Equal("受注入力.exe", u.AppName);
+        Assert.Equal("受注", u.AppDetail);
+        Assert.Equal(ProcInfoStates.Pending, u.ProcInfoState);
+    }
+
+    [Fact]
+    public async Task DBLink接続元の確定したアプリ名は再観測で上書きしない()
+    {
+        _source.Next = [Obs(1, "ORACLE.EXE", "3120:4410")];
+        await _service.PollSessionsAsync(_targetId, default);
+        using (var db = _factory.CreateDbContext())
+        {
+            db.LinkSources.Add(new LinkSource { TargetId = _targetId, Name = "基幹DB", Provider = "Fake", ConnectionString = "y" });
+            await db.SaveChangesAsync();
+        }
+        await _service.PollLinkSourcesAsync(_targetId, default);
+        using (var db = _factory.CreateDbContext())
+        {
+            await db.DbLinkUsages.ExecuteUpdateAsync(x => x
+                .SetProperty(u => u.AppName, "IIS: Juchu").SetProperty(u => u.ProcInfoState, ProcInfoStates.Resolved));
+        }
+
+        await _service.PollLinkSourcesAsync(_targetId, default);
+
+        using var db2 = _factory.CreateDbContext();
+        var row = await db2.DbLinkUsages.SingleAsync();
+        Assert.Equal("IIS: Juchu", row.AppName);
+        Assert.Equal(ProcInfoStates.Resolved, row.ProcInfoState);
+        Assert.Equal(2, row.HitCount);
+    }
+
+    [Fact]
     public async Task DBLink接続元の警告は記録して検索結果は保存する()
     {
         _source.Next = [Obs(1, "ORACLE.EXE", "3120:4410")];
@@ -205,13 +252,12 @@ public sealed class CollectionServiceTests : IDisposable
             {
                 DbLinkName = DbLinkMatchTypes.ProcessOnlyLinkName, MatchType = DbLinkMatchTypes.Process,
                 InstId = 1, Sid = 77, Serial = 7, LogonTime = new DateTime(2026, 11, 4, 8, 0, 0),
-                Machine = "KIKAN-AP01", Program = "受注入力.exe", ServerProcess = "4410",
+                Machine = "KIKAN-AP01", Program = "受注入力.exe", Module = "受注", ServerProcess = "4410", ClientProcess = "5120:88",
             };
-            return Task.FromResult(new DbLinkUsageResult(
-            [
-                u,
-                u with { DbLinkName = "PUBLIC.KOUKAI_LINK", MatchType = DbLinkMatchTypes.Sql, SqlText = "select * from T@KOUKAI_LINK" },
-            ], Warnings.ToList()));
+            List<ObservedLinkUsage> list = [u];
+            if (source.SelectedLinks.Count > 0)
+                list.Add(u with { DbLinkName = "PUBLIC.KOUKAI_LINK", MatchType = DbLinkMatchTypes.Sql, SqlText = "select * from T@KOUKAI_LINK" });
+            return Task.FromResult(new DbLinkUsageResult(list, Warnings.ToList()));
         }
     }
 }

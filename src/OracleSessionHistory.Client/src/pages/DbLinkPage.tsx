@@ -4,6 +4,7 @@ import { useAsync } from '../hooks'
 import { fmtDateTime, matchTypeLabels } from '../format'
 import Pager from '../components/Pager'
 import SessionDetailPanel from '../components/SessionDetailPanel'
+import AppCell from '../components/AppCell'
 
 export default function DbLinkPage({ targetId }: { targetId?: number }) {
   const [input, setInput] = useState('')
@@ -26,7 +27,7 @@ export default function DbLinkPage({ targetId }: { targetId?: number }) {
           setPage(1)
         }}
       >
-        <input className="wide" placeholder="端末・プログラム・ユーザ・DB Link・SQL で絞り込み" value={input} onChange={(e) => setInput(e.target.value)} />
+        <input className="wide" placeholder="端末・アプリ・プログラム・ユーザ・DB Link・SQL で絞り込み" value={input} onChange={(e) => setInput(e.target.value)} />
         <div className="actions">
           <button type="submit" className="primary">
             絞り込み
@@ -48,9 +49,9 @@ export default function DbLinkPage({ targetId }: { targetId?: number }) {
                 <th>DB Link</th>
                 <th>特定方法</th>
                 <th>実行端末</th>
-                <th>実行プログラム</th>
+                <th>実行アプリ</th>
+                <th>実行ユーザ</th>
                 <th>接続ユーザ</th>
-                <th>OSユーザ</th>
                 <th>ログオン</th>
                 <th>SQL</th>
                 <th>監視対象側</th>
@@ -68,9 +69,16 @@ export default function DbLinkPage({ targetId }: { targetId?: number }) {
                     </span>
                   </td>
                   <td>{u.machine}</td>
-                  <td>{u.program}</td>
+                  <td>
+                    <AppCell appName={u.appName} appDetail={u.appDetail} state={u.procInfoState} error={u.procInfoError} />
+                    {u.procCommandLine && (
+                      <div className="app-detail mono" title={u.procCommandLine}>
+                        {u.procCommandLine}
+                      </div>
+                    )}
+                  </td>
+                  <td className="nowrap">{u.procOwner ?? u.osUser}</td>
                   <td>{u.username}</td>
-                  <td>{u.osUser}</td>
                   <td className="nowrap">{fmtDateTime(u.logonTime)}</td>
                   <td className="ellipsis mono" title={u.sqlText ?? ''}>
                     {u.sqlText}

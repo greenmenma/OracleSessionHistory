@@ -125,6 +125,42 @@ public sealed class AppDbMigrationTests : IDisposable
             rows.Select(r => r.ProcInfoState));
     }
 
+    [Fact]
+    public async Task このシステム自身の接続を種別Selfにし既存のDBLink利用元は取得待ちにする()
+    {
+        await using var db = new AppDbContext(_sqliteOptions);
+        var migrator = db.GetService<IMigrator>();
+        var all = db.Database.GetMigrations().ToList();
+        var before = all[all.FindIndex(m => m.EndsWith("_AddLinkOriginAndTargetPrograms")) - 1];
+        await migrator.MigrateAsync(before);
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO Targets (Id, Name, Provider, ConnectionString, IntervalSeconds, LinkIntervalSeconds, IncludeBackground, CollectSqlText, Enabled, CreatedAt, UpdatedAt, ConsecutiveFailures) " +
+            "VALUES (1, 'T', 'Oracle', 'x', 5, 30, 0, 1, 1, '2026-11-01 00:00:00', '2026-11-01 00:00:00', 0)");
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO Sessions (TargetId, InstId, Sid, Serial, LogonTime, Program, Module, ProcessKind, AppName, ProcInfoState, FirstSeenAt, LastSeenAt, IsConnected, DisconnectUncertain) VALUES " +
+            "(1, 1, 1, 1, '2026-11-01 09:00:00', 'w3wp.exe', 'OracleSessionHistory', 'Client', 'w3wp.exe', 'Pending', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1, 0), " +
+            "(1, 1, 2, 1, '2026-11-01 09:00:00', 'OracleSessionHistory.Batch.exe', NULL, 'Client', 'x', 'Pending', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1, 0), " +
+            "(1, 1, 3, 1, '2026-11-01 09:00:00', 'w3wp.exe', '受注', 'Client', 'w3wp.exe', 'Pending', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1, 0)");
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO LinkSources (Id, TargetId, Name, Provider, ConnectionString, Enabled, SelectedLinks, CreatedAt, UpdatedAt) " +
+            "VALUES (1, 1, 'L', 'Oracle', 'y', 1, '[]', '2026-11-01 00:00:00', '2026-11-01 00:00:00')");
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO DbLinkUsages (LinkSourceId, TargetId, DbLinkName, MatchType, InstId, Sid, Serial, LogonTime, Program, FirstSeenAt, LastSeenAt, HitCount) VALUES " +
+            "(1, 1, '(PROCESS)', 'PROCESS', 1, 1, 1, '2026-11-01 09:00:00', '受注入力.exe', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1), " +
+            "(1, 1, '(PROCESS)', 'PROCESS', 1, 2, 1, '2026-11-01 09:00:00', NULL, '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1), " +
+            "(1, 1, '(PROCESS)', 'PROCESS', 1, 3, 1, '2026-11-01 09:00:00', ' ', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1)");
+
+        await migrator.MigrateAsync();
+
+        var sessions = await db.Sessions.OrderBy(s => s.Sid).ToListAsync();
+        Assert.Equal([ProcessKinds.Self, ProcessKinds.Self, ProcessKinds.Client], sessions.Select(s => s.ProcessKind));
+        Assert.Equal([ProcInfoStates.NotApplicable, ProcInfoStates.NotApplicable, ProcInfoStates.Pending], sessions.Select(s => s.ProcInfoState));
+        var usages = await db.DbLinkUsages.OrderBy(u => u.Sid).ToListAsync();
+        Assert.Equal(["受注入力.exe", "(不明)", "(不明)"], usages.Select(u => u.AppName));
+        // 移行時点で使われ続けている利用元も調べる（観測されなくなったものは ProcessInfoService が理由を付けて終える）
+        Assert.All(usages, u => Assert.Equal(ProcInfoStates.Pending, u.ProcInfoState));
+    }
+
     /// <summary>マイグレーション導入前（EnsureCreated）の DB を再現する：Initial のスキーマを作り、履歴テーブルを消す</summary>
     private static async Task CreateLegacySchemaAsync(AppDbContext db)
     {

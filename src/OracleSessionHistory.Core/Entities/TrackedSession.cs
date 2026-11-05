@@ -4,7 +4,7 @@ namespace OracleSessionHistory.Core.Entities;
 /// 追跡しているセッション。1 つの Oracle セッション（inst_id, sid, serial#, logon_time）につき 1 行。
 /// 接続中は毎回同じ行を更新し、切断を検知したら IsConnected=false にして履歴として残す。
 /// </summary>
-public class TrackedSession
+public class TrackedSession : IProcessInfoRecord
 {
     public long Id { get; set; }
     public int TargetId { get; set; }
@@ -115,6 +115,8 @@ public static class ProcessKinds
     public const string OracleInternal = "OracleInternal";
     /// <summary>BACKGROUND セッション</summary>
     public const string Background = "Background";
+    /// <summary>このシステム自身（OracleSessionHistory の Batch・Server）の接続。既定で非表示</summary>
+    public const string Self = "Self";
 
     /// <summary>
     /// 画面に既定で表示する種別（接続アプリの特定に必要なもの）。それ以外の Oracle 内部プロセスは既定で非表示。

@@ -10,7 +10,8 @@ public sealed record SessionListItem(
     string? Username, string? SchemaName, string? OsUser, string? Machine, string? Program, string? Module,
     string? Status, string ProcessKind, string? JobName, bool IsConnected, DateTime FirstSeenAt, DateTime LastSeenAt,
     DateTime? DisconnectedAt, bool DisconnectUncertain, int DbLinkOriginCount,
-    string AppName, string? AppDetail, string? ProcOwner, string ProcInfoState, string? ProcInfoError);
+    string AppName, string? AppDetail, string? ProcOwner, string ProcInfoState, string? ProcInfoError,
+    string? LinkOriginApp = null, string? LinkOriginMachine = null);
 
 public sealed record SessionSearch(
     int? TargetId, string? State, string? Q, string? Machine, string? Program, string? Username, string? OsUser,
@@ -23,6 +24,18 @@ public static class SessionEndpoints
     /// <summary>完全一致の検索で「端末なし（MACHINE が空）」を表す値。接続アプリ表の「(不明)」から遷移した場合に使う</summary>
     public const string UnknownMachine = "(不明)";
 
+    /// <summary>一覧の 1 行（DB Link の可能性がある行は、特定できた接続元のアプリも含める）</summary>
+    internal static IQueryable<SessionListItem> Project(IQueryable<TrackedSession> q) =>
+        q.Select(x => new SessionListItem(
+            x.Id, x.TargetId, x.Target!.Name, x.InstId, x.Sid, x.Serial, x.LogonTime,
+            x.Username, x.SchemaName, x.OsUser, x.Machine, x.Program, x.Module,
+            x.Status, x.ProcessKind, x.JobName, x.IsConnected, x.FirstSeenAt, x.LastSeenAt,
+            x.DisconnectedAt, x.DisconnectUncertain, x.DbLinkOrigins.Count,
+            x.AppName, x.AppDetail, x.ProcOwner, x.ProcInfoState, x.ProcInfoError,
+            // DB Link の可能性があるセッションは、特定できた接続元（最後に観測したもの）のアプリを一覧に出す
+            x.DbLinkOrigins.OrderByDescending(u => u.LastSeenAt).Select(u => u.AppName).FirstOrDefault(),
+            x.DbLinkOrigins.OrderByDescending(u => u.LastSeenAt).Select(u => u.Machine).FirstOrDefault()));
+
     public static void MapSessionEndpoints(this IEndpointRouteBuilder app)
     {
         var g = app.MapGroup("/api");
@@ -33,16 +46,10 @@ public static class SessionEndpoints
             var pageSize = Math.Clamp(s.PageSize, 1, 500);
             var page = Math.Max(1, s.Page);
             var total = await q.CountAsync();
-            var items = await q
-                .OrderByDescending(x => x.LogonTime) // 最新のログオンを上位に
-                .ThenByDescending(x => x.Id)
-                .Skip((page - 1) * pageSize).Take(pageSize)
-                .Select(x => new SessionListItem(
-                    x.Id, x.TargetId, x.Target!.Name, x.InstId, x.Sid, x.Serial, x.LogonTime,
-                    x.Username, x.SchemaName, x.OsUser, x.Machine, x.Program, x.Module,
-                    x.Status, x.ProcessKind, x.JobName, x.IsConnected, x.FirstSeenAt, x.LastSeenAt,
-                    x.DisconnectedAt, x.DisconnectUncertain, x.DbLinkOrigins.Count,
-                    x.AppName, x.AppDetail, x.ProcOwner, x.ProcInfoState, x.ProcInfoError))
+            var items = await Project(q
+                    .OrderByDescending(x => x.LogonTime) // 最新のログオンを上位に
+                    .ThenByDescending(x => x.Id)
+                    .Skip((page - 1) * pageSize).Take(pageSize))
                 .ToListAsync();
             return new PagedResult<SessionListItem>(items, total, page, pageSize);
         });

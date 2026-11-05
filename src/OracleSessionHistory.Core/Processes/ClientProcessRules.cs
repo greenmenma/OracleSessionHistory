@@ -51,13 +51,26 @@ public static partial class ClientProcessRules
     }
 
     /// <summary>ホスト名が対象外端末パターン（カンマ区切り、* はワイルドカード、大文字小文字無視）に一致するか</summary>
-    public static bool IsExcluded(string host, string? patterns)
+    public static bool IsExcluded(string host, string? patterns) => MatchesAny(host, patterns);
+
+    /// <summary>
+    /// PROGRAM がプロセス情報を取得する実行ファイルのパターン（カンマ区切り、* はワイルドカード、大文字小文字無視）に一致するか。
+    /// PROGRAM がパス付きの場合はファイル名でも比較する。パターンが空なら一致しない。
+    /// </summary>
+    public static bool IsTargetProgram(string? program, string? patterns)
+    {
+        if (string.IsNullOrWhiteSpace(program)) return false;
+        var prog = program.Trim();
+        return MatchesAny(prog, patterns) || MatchesAny(FileNameOf(prog), patterns);
+    }
+
+    private static bool MatchesAny(string value, string? patterns)
     {
         if (string.IsNullOrWhiteSpace(patterns)) return false;
         foreach (var p in patterns.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var regex = "^" + Regex.Escape(p).Replace(@"\*", ".*") + "$";
-            if (Regex.IsMatch(host, regex, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)) return true;
+            if (Regex.IsMatch(value, regex, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)) return true;
         }
         return false;
     }

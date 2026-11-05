@@ -38,7 +38,8 @@ cd src/OracleSessionHistory.Client && npm run typecheck && npm run build
 - 追跡ロジックは `SessionTracker`（DB 非依存の純粋関数）に置き、変更時は `SessionTrackerTests` にテストを追加する。
 - Oracle の SQL は `OracleSessionSource` / `OracleDbLinkInspector` に集約する。付加情報（ジョブ・SQL テキスト等）の取得は `TryQueryAsync` で失敗を警告にとどめ、セッション取得自体を失敗させない。
 - **接続アプリの特定**（接続元サーバーの WMI/CIM）は `ProcessInfoService` に置き、セッション収集と独立させる（失敗しても `Sessions` の接続・切断に触れない）。アプリ名の規則は `AppIdentifier`（純粋関数）に置き、`AppIdentifierTests` にテストを追加する。`SessionTracker` は `ProcInfoState=Resolved` の `AppName` を上書きしない（`docs/process-info.md`）。
-- 画面・集計は既定で Oracle 内部プロセスを除く（`SessionQueries.WhereVisible`。DB Link の可能性は表示する）。
+- 画面・集計は既定で Oracle 内部プロセスとこのシステム自身の接続（`ProcessKinds.Self`。`OracleDb.OpenAsync` が MODULE に設定する `ProgramClassifier.SelfModuleName` で判定）を除く（`SessionQueries.WhereVisible`。DB Link の可能性は表示する）。
+- プロセス情報は、監視対象への直接の接続は設定に登録した実行ファイル（`ProcessInspectionSettings.TargetPrograms`）だけ、DB Link 利用元（`DbLinkUsage`）は常に取得する。両者は `IProcessInfoRecord` として同じ規則で扱う。
 - 監視対象の種類を増やすときは `ISessionSource`（と必要なら `IDbLinkInspector`）を実装し、`CoreServiceCollectionExtensions` に登録する。`SourceProviders` に定数を追加する。
 - API は接続文字列・プロセス情報取得アカウントのパスワードを返さない（`ConnectionStringMasker`、`ProcessSettingsDto.HasPassword`）。エンティティをそのまま返す場合は `MonitorTarget` / `LinkSource` を含めないこと。
 - 監視対象の設定を変更したら `UpdatedAt` を更新する（Batch はこの値で再起動を判断する）。

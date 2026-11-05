@@ -86,6 +86,9 @@ export interface SessionListItem {
   procOwner: string | null
   procInfoState: ProcInfoState
   procInfoError: string | null
+  /** DB Link の可能性があるセッションで、接続元 DB 上で特定できた利用元のアプリ・端末 */
+  linkOriginApp: string | null
+  linkOriginMachine: string | null
 }
 
 /** プロセス情報の取得状態 */
@@ -180,6 +183,21 @@ export interface DbLinkUsage {
   firstSeenAt: string
   lastSeenAt: string
   hitCount: number
+  /** 接続元端末のクライアントプロセス（gv$session.process） */
+  clientProcess: string | null
+  appName: string
+  appDetail: string | null
+  procInfoState: ProcInfoState
+  procInfoError: string | null
+  procInfoAt: string | null
+  procName: string | null
+  procPath: string | null
+  procCommandLine: string | null
+  procOwner: string | null
+  procStartedAt: string | null
+  procParentName: string | null
+  iisAppPool: string | null
+  iisSite: string | null
 }
 
 export interface SessionDetail {
@@ -245,6 +263,7 @@ export interface ProcessSettings {
   timeoutSeconds: number
   excludeMachines: string | null
   updatedAt: string | null
+  targetPrograms: string | null
 }
 
 /** password は null（変更なし）・''（クリア）・新しい値 */
@@ -255,6 +274,7 @@ export interface ProcessSettingsInput {
   dnsSuffix: string | null
   timeoutSeconds: number
   excludeMachines: string | null
+  targetPrograms: string | null
 }
 
 export class ApiError extends Error {}

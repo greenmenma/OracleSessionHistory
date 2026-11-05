@@ -148,10 +148,15 @@ function UsageList({ title, items }: { title: string; items: DbLinkUsage[] }) {
       {items.map((u) => (
         <div key={u.id} className="usage">
           <div>
-            <strong>{u.machine}</strong> / {u.program}
+            <strong>{u.machine}</strong> / <strong>{u.appName}</strong>
+            {u.procInfoState !== 'Resolved' && u.procInfoState !== 'NotApplicable' && (
+              <span className="muted">（{procInfoLabels[u.procInfoState]}）</span>
+            )}
           </div>
+          {u.appDetail && <div className="muted small">{u.appDetail}</div>}
+          {u.procPath && u.procPath !== u.appDetail && <div className="muted small mono">{u.procPath}</div>}
           <div className="muted">
-            ユーザ {u.username}（OS: {u.osUser}）・{u.linkSourceName} ・ {u.dbLinkName} ・{' '}
+            ユーザ {u.username}（OS: {u.procOwner ?? u.osUser}）・PROGRAM {u.program}・{u.linkSourceName} ・ {u.dbLinkName} ・{' '}
             {matchTypeLabels[u.matchType] ?? u.matchType}
           </div>
           {u.sqlText && <pre className="sql small">{u.sqlText}</pre>}

@@ -17,10 +17,22 @@ public static partial class ProgramClassifier
     [GeneratedRegex(@"\(([A-Z0-9]{2,5})\)\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex ProcessTag();
 
-    public static string Classify(string? program, string? sessionType)
+    /// <summary>このシステムが Oracle に接続するときに設定する MODULE（<c>OracleDb.OpenAsync</c>）</summary>
+    public const string SelfModuleName = "OracleSessionHistory";
+
+    /// <summary>このシステムの実行ファイル名の先頭（OracleSessionHistory.Batch.exe 等）</summary>
+    private const string SelfProgramPrefix = "OracleSessionHistory.";
+
+    /// <param name="module">gv$session.module（このシステム自身の接続の判定に使う）</param>
+    public static string Classify(string? program, string? sessionType, string? module = null)
     {
         if (string.Equals(sessionType, "BACKGROUND", StringComparison.OrdinalIgnoreCase))
             return ProcessKinds.Background;
+
+        // このシステム（Batch の収集・Server の接続テスト等）の接続は、利用元の調査対象ではないため分けておく
+        if (string.Equals(module?.Trim(), SelfModuleName, StringComparison.OrdinalIgnoreCase)
+            || (program?.Trim().StartsWith(SelfProgramPrefix, StringComparison.OrdinalIgnoreCase) ?? false))
+            return ProcessKinds.Self;
 
         if (string.IsNullOrWhiteSpace(program) || !OracleProgram().IsMatch(program.Trim()))
             return ProcessKinds.Client;

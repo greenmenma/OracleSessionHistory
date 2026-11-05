@@ -38,6 +38,7 @@ export const kindLabels: Record<string, string> = {
   DataPump: 'Data Pump',
   OracleInternal: 'Oracle内部',
   Background: 'バックグラウンド',
+  Self: 'このシステム',
 }
 
 export const matchTypeLabels: Record<string, string> = {
@@ -56,5 +57,5 @@ export const procInfoLabels: Record<string, string> = {
   NotApplicable: '対象外',
 }
 
-/** Oracle 内部プロセス（既定で非表示にする種別） */
-export const internalKinds = ['JobSlave', 'ParallelSlave', 'AqSlave', 'DataPump', 'OracleInternal', 'Background']
+/** Oracle 内部プロセスとこのシステム自身の接続（既定で非表示にする種別） */
+export const internalKinds = ['JobSlave', 'ParallelSlave', 'AqSlave', 'DataPump', 'OracleInternal', 'Background', 'Self']

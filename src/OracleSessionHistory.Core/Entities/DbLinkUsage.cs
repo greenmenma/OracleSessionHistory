@@ -4,7 +4,7 @@ namespace OracleSessionHistory.Core.Entities;
 /// DB Link 接続元 DB 上で、DB Link を使用していたセッション。
 /// 1 セッション × 1 DB Link につき 1 行で、観測のたびに更新する。
 /// </summary>
-public class DbLinkUsage
+public class DbLinkUsage : IProcessInfoRecord
 {
     public long Id { get; set; }
     public int LinkSourceId { get; set; }
@@ -32,9 +32,32 @@ public class DbLinkUsage
     public string? Program { get; set; }
     public string? Module { get; set; }
     public string? Action { get; set; }
+    /// <summary>接続元 DB のサーバープロセス（gv$process.spid）</summary>
     public string? ServerProcess { get; set; }
+    /// <summary>接続元セッションのクライアントプロセス（gv$session.process。Windows は "pid:tid"）</summary>
+    public string? ClientProcess { get; set; }
     public string? SqlId { get; set; }
     public string? SqlText { get; set; }
+
+    // ---- 接続元端末のプロセス情報（ProcessInfoService が取得。docs/process-info.md） ----
+    /// <summary>アプリ名（プロセス情報が取れるまでは PROGRAM）</summary>
+    public string AppName { get; set; } = "";
+    public string? AppDetail { get; set; }
+    /// <summary>プロセス情報の取得状態（<see cref="ProcInfoStates"/>）</summary>
+    public string ProcInfoState { get; set; } = ProcInfoStates.Pending;
+    public string? ProcInfoError { get; set; }
+    public DateTime? ProcInfoAt { get; set; }
+    public string? ProcName { get; set; }
+    public string? ProcPath { get; set; }
+    public string? ProcCommandLine { get; set; }
+    public string? ProcOwner { get; set; }
+    public DateTime? ProcStartedAt { get; set; }
+    public string? ProcParentName { get; set; }
+    public string? IisAppPool { get; set; }
+    public string? IisSite { get; set; }
+
+    /// <summary>DB Link の検索では取得しない（JDBC の判定は PROGRAM で行う）</summary>
+    string? IProcessInfoRecord.ClientDriver => null;
 
     /// <summary>監視対象側の対応セッション（プロセス ID で一致した場合）</summary>
     public long? MatchedSessionId { get; set; }

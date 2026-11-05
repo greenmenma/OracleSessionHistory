@@ -9,6 +9,7 @@ const colors: Record<string, string> = {
   DataPump: 'purple',
   OracleInternal: 'gray',
   Background: 'gray',
+  Self: 'gray',
 }
 
 export default function KindBadge({ kind }: { kind: string }) {
