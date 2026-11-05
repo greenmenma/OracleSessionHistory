@@ -6,5 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- 依存パッケージの言語別リソース（ja/、de/ 等のサテライトアセンブリ）を出力しない -->
+    <SatelliteResourceLanguages>-</SatelliteResourceLanguages>
   </PropertyGroup>
 </Project>
