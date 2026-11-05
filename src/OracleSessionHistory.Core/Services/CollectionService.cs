@@ -164,9 +164,6 @@ public sealed class CollectionService(
     public async Task<int> CleanupAsync(int retentionDays, CancellationToken ct)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var cutoff = DateTime.Now.AddDays(-retentionDays);
-        var usages = await db.DbLinkUsages.Where(u => u.LastSeenAt < cutoff).ExecuteDeleteAsync(ct);
-        var sessions = await db.Sessions.Where(s => !s.IsConnected && s.LastSeenAt < cutoff).ExecuteDeleteAsync(ct);
-        return sessions + usages;
+        return await AppDbMaintenance.DeleteExpiredAsync(db, DateTime.Now.AddDays(-retentionDays), ct);
     }
 }

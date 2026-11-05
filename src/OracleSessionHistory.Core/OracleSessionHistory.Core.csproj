@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.14" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.14" />
     <PackageReference Include="Oracle.ManagedDataAccess.Core" Version="23.26.400" />
     <!-- Oracle ドライバの推移的依存の脆弱性対策 -->
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />

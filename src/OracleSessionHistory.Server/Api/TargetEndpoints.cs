@@ -60,11 +60,8 @@ public static class TargetEndpoints
             return Results.Ok(TargetDto.From(t));
         });
 
-        g.MapDelete("/targets/{id:int}", async (int id, AppDbContext db) =>
-        {
-            var deleted = await db.Targets.Where(t => t.Id == id).ExecuteDeleteAsync();
-            return deleted > 0 ? Results.NoContent() : Results.NotFound();
-        });
+        g.MapDelete("/targets/{id:int}", async (int id, AppDbContext db, CancellationToken ct) =>
+            await AppDbMaintenance.DeleteTargetAsync(db, id, ct) ? Results.NoContent() : Results.NotFound());
 
         g.MapPost("/targets/test", async (TestConnectionInput input, AppDbContext db, SessionSourceFactory f, CancellationToken ct) =>
         {

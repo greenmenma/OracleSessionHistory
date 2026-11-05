@@ -48,6 +48,7 @@ cd src/OracleSessionHistory.Client && npm run typecheck && npm run build
 - コメント・ドキュメント・画面文言は日本語。識別子は英語。
 - C#: nullable 有効、ファイルスコープ namespace、プライマリコンストラクタ可。
 - TypeScript: `strict`。API の型は `src/api.ts` に集約する。外部 UI ライブラリ・ルーターは使わない（`router.ts` の簡易ハッシュルーター）。
+- 履歴 DB はデバッグ時 SQLite、リリース時 SQL Server（`AppDb:Provider`。`appsettings.json` はリリース用の値で、デバッグ用の指定は AppHost と `launchSettings.json`。リリース環境は 1 つのため `appsettings.Development.json` は作らない）。LINQ は両方で変換できるものを使い、スキーマを変えたら `AppDatabaseTests` を通す。セッション削除は `AppDbMaintenance` 経由で行う。
 - スキーマは `EnsureCreated` で作成している。エンティティにカラムを追加した場合は既存 DB を削除するか、`docs/development.md` の手順に従う。
 
 ## スキル

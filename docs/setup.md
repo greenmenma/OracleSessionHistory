@@ -33,13 +33,43 @@ dotnet run --project src\OracleSessionHistory.AppHost
 ### Aspire を使わずに個別に起動する
 
 ```powershell
+$env:AppDb__Provider = "Sqlite"   # launchSettings.json の http プロファイルでも設定済み
 $env:ConnectionStrings__AppDb = "Data Source=C:\work\oraclesessionhistory\oraclesessionhistory.db"
 dotnet run --project src\OracleSessionHistory.Server     # http://localhost:5292
 dotnet run --project src\OracleSessionHistory.Batch      # 別ターミナルで同じ環境変数を設定
 cd src\OracleSessionHistory.Client; npm run dev           # http://localhost:5173
 ```
 
-`ConnectionStrings__AppDb` を指定しない場合、Batch・Server とも `%LOCALAPPDATA%\OracleSessionHistory\oraclesessionhistory.db` を使います。
+デバッグ時は SQLite を使います（AppHost と各プロジェクトの `launchSettings.json` で `AppDb__Provider=Sqlite` を指定）。`appsettings.json` はリリース環境（SQL Server）用の設定のため、`dotnet run --no-launch-profile` で起動すると SQL Server に接続しようとします。
+
+SQLite で `ConnectionStrings__AppDb` を指定しない場合、Batch・Server とも `%LOCALAPPDATA%\OracleSessionHistory\oraclesessionhistory.db` を使います。
+
+## 履歴 DB の種類（SQLite / SQL Server）
+
+`AppDb:Provider` で切り替えます。Batch と Server には **同じ** 値を設定してください。デバッグ時は SQLite、リリース環境は SQL Server とし、`appsettings.json` にはリリース環境用の仮の値を入れています（リリース環境は 1 つのため `appsettings.Development.json` 等の環境別ファイルは使いません）。
+
+| `AppDb:Provider` | `ConnectionStrings:AppDb` | 用途 |
+|---|---|---|
+| `Sqlite`（未指定時。デバッグ用） | `Data Source=<ファイルパス>`。省略時は上記の既定パス | Batch と Server を同じマシンに置く場合 |
+| `SqlServer`（`appsettings.json` の値。リリース用） | SQL Server の接続文字列（必須） | リリース環境 |
+
+`appsettings.json` の仮の値（`SQLSERVER_HOST` / `OSH_USER` / `CHANGE_ME` を配置先で書き換える）:
+
+```json
+{
+  "ConnectionStrings": {
+    "AppDb": "Server=SQLSERVER_HOST;Database=OracleSessionHistory;User Id=OSH_USER;Password=CHANGE_ME;TrustServerCertificate=True"
+  },
+  "AppDb": { "Provider": "SqlServer" }
+}
+```
+
+環境変数の場合は `AppDb__Provider=SqlServer` と `ConnectionStrings__AppDb=...` を指定します。
+
+- 初回起動時に `EnsureCreated` でデータベースとテーブルを作成します。データベースが無い場合は作成するため、初回だけ `dbcreator` 権限が必要です。事前に空のデータベースを作成しておけば、そのデータベースの `db_owner`（テーブル作成後は `db_datareader` / `db_datawriter`）で動作します。
+- テーブルが 1 つでも存在するデータベースではテーブルを作成しません。専用のデータベースを用意してください。
+- Batch の書き込み中に画面の参照が待たされないよう、`ALTER DATABASE OracleSessionHistory SET READ_COMMITTED_SNAPSHOT ON;` を推奨します。
+- SQLite の既存データは移行されません。切り替えると履歴は空から始まります。
 
 ## 監視対象の登録
 
@@ -65,7 +95,7 @@ cd src\OracleSessionHistory.Client; npm ci; npm run build   # Server\wwwroot に
 dotnet publish src\OracleSessionHistory.Server -c Release -o C:\apps\OracleSessionHistory.Server
 ```
 
-`appsettings.json` の `ConnectionStrings:AppDb` に履歴 DB のパスを指定します。
+`appsettings.json` の `ConnectionStrings:AppDb` を SQL Server の実際の接続文字列に書き換えます。
 
 ### Batch（Windows サービス）
 
@@ -75,7 +105,7 @@ sc.exe create OracleSessionHistory.Batch binPath= "C:\apps\OracleSessionHistory.
 sc.exe start OracleSessionHistory.Batch
 ```
 
-Server と **同じ** `ConnectionStrings:AppDb` を設定してください。Batch は Linux の systemd でも動作します。
+Server と **同じ** `ConnectionStrings:AppDb`・`AppDb:Provider` を設定してください。Batch は Linux の systemd でも動作します。
 
 ### 設定項目（Batch の `Collector` セクション）
 
@@ -83,7 +113,7 @@ Server と **同じ** `ConnectionStrings:AppDb` を設定してください。Ba
 |---|---|---|
 | `ReloadSeconds` | 10 | 監視対象の設定変更を確認する間隔 |
 | `RetentionDays` | 100 | 切断済み履歴の保持日数（接続数表で 2 ヶ月分使うため 70 以上推奨） |
-| `SeedDemoTarget` | false（Development は true） | 監視対象が無いときにデモ用を登録 |
+| `SeedDemoTarget` | false（デバッグ起動時は true） | 監視対象が無いときにデモ用を登録 |
 
 ### セキュリティ
 

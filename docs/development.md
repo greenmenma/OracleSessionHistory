@@ -29,7 +29,13 @@ cd src/OracleSessionHistory.Client && npm run typecheck
 
 ## スキーマ変更
 
-`EnsureCreated` を使っているため、エンティティを変更した場合、開発環境では `.data/oraclesessionhistory.db*` を削除して再作成します。本番で履歴を残したまま変更する場合は、EF Core マイグレーションの導入（`dotnet ef migrations add`）を検討してください。
+SQLite と SQL Server の両方で動くこと。`AppDatabaseTests` が SQL Server 向けのモデルを検証します（サーバー不要）。
+
+- インデックスを張る文字列プロパティには `HasMaxLength` を指定する（`nvarchar(max)` はインデックスにできない）。
+- 監視対象から同じテーブルへの削除の連鎖経路（CASCADE / SET NULL）が 2 本以上にならないようにする。DB 側で外せない参照は `ClientSetNull` にし、削除前に `AppDbMaintenance` で外す。
+- LINQ は両方のプロバイダーで変換できるものを使う。プロバイダー固有の SQL（`PRAGMA` 等）は `db.Database.IsSqlite()` などで分岐する。
+
+`EnsureCreated` を使っているため、エンティティを変更した場合、開発環境では `.data/oraclesessionhistory.db*` を削除して再作成します（SQL Server の場合はデータベースを削除）。本番で履歴を残したまま変更する場合は、EF Core マイグレーションの導入（`dotnet ef migrations add`）を検討してください。
 
 ## API 一覧
 

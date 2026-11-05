@@ -27,7 +27,8 @@ MACHINE・PROGRAM・OSUSER・MODULE はクライアントが申告する値で�
 
 ## 運用上の制約
 
-- 履歴 DB は SQLite（単一ファイル）です。Batch と Server は同じマシン（または確実に共有できるローカルディスク）に置いてください。ネットワークドライブ上の SQLite は推奨されません。大規模に運用する場合は SQL Server 等への置き換えを検討してください（`AppDatabase.AddAppDatabase` の `UseSqlite` を変更。現時点では SQLite のみ対応）。
+- 履歴 DB は SQLite（既定）または SQL Server です（`AppDb:Provider`、[setup.md](setup.md) 参照）。SQLite の場合、Batch と Server は同じマシン（または確実に共有できるローカルディスク）に置いてください。ネットワークドライブ上の SQLite は推奨されません。別マシン構成や大規模な運用では SQL Server を使ってください。
+- SQLite と SQL Server の間でデータを移行する機能はありません。
 - スキーマは `EnsureCreated` で作成しており、マイグレーションは未導入です。
 - 画面に認証はありません。
 - Oracle 側の時刻（`logon_time`）とアプリサーバーの時刻（`FirstSeenAt` 等）は別の時計です。タイムゾーンが異なる環境では表示がずれます。

@@ -3,7 +3,11 @@ using OracleSessionHistory.Core.Entities;
 
 namespace OracleSessionHistory.Core.Data;
 
-/// <summary>収集した履歴を保存するアプリケーション DB（既定は SQLite）</summary>
+/// <summary>
+/// 収集した履歴を保存するアプリケーション DB（SQLite / SQL Server）。
+/// SQL Server でも作成できるよう、インデックス対象の文字列には長さを指定し、
+/// 削除時の連鎖経路が複数にならないようにする。
+/// </summary>
 public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
     public DbSet<MonitorTarget> Targets => Set<MonitorTarget>();
@@ -29,6 +33,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => x.LastSeenAt);
             e.HasIndex(x => x.Machine);
             e.HasIndex(x => x.Program);
+            // インデックス対象（SQL Server の nvarchar(max) はインデックスにできない）。Oracle の列長より十分大きくする
+            e.Property(x => x.Machine).HasMaxLength(256);
+            e.Property(x => x.Program).HasMaxLength(256);
+            e.Property(x => x.ProcessKind).HasMaxLength(30);
             e.HasOne(x => x.Target).WithMany().HasForeignKey(x => x.TargetId).OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -42,8 +50,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.LinkSourceId, x.DbLinkName, x.InstId, x.Sid, x.Serial, x.LogonTime }).IsUnique();
             e.HasIndex(x => new { x.TargetId, x.LastSeenAt });
             e.HasIndex(x => x.MatchedSessionId);
+            e.Property(x => x.DbLinkName).HasMaxLength(256);
+            e.Property(x => x.MatchType).HasMaxLength(30);
             e.HasOne(x => x.LinkSource).WithMany().HasForeignKey(x => x.LinkSourceId).OnDelete(DeleteBehavior.Cascade);
-            e.HasOne(x => x.MatchedSession).WithMany(s => s.DbLinkOrigins).HasForeignKey(x => x.MatchedSessionId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.MatchedSession).WithMany(s => s.DbLinkOrigins).HasForeignKey(x => x.MatchedSessionId)
+                // SQL Server は監視対象からの連鎖経路が 2 つになるため DB 側の SET NULL を使えない。
+                // セッション削除前に AppDbMaintenance で参照を外す
+                .OnDelete(DeleteBehavior.ClientSetNull);
         });
     }
 }

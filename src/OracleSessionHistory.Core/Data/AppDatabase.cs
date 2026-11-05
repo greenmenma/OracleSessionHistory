@@ -7,26 +7,69 @@ using OracleSessionHistory.Core.Entities;
 
 namespace OracleSessionHistory.Core.Data;
 
+/// <summary>履歴 DB の種類（設定 AppDb:Provider の値）</summary>
+public static class AppDbProviders
+{
+    public const string Sqlite = "Sqlite";
+    public const string SqlServer = "SqlServer";
+
+    public static readonly string[] All = [Sqlite, SqlServer];
+}
+
 /// <summary>アプリケーション DB の登録・初期化</summary>
 public static class AppDatabase
 {
     public const string ConnectionStringName = "AppDb";
 
+    /// <summary>DB の種類を指定する設定キー（既定は Sqlite）</summary>
+    public const string ProviderKey = "AppDb:Provider";
+
     /// <summary>
-    /// AppDbContext を DI に登録する。接続文字列 "AppDb" が無い場合は
-    /// ローカルアプリケーションデータ配下（Windows: %LOCALAPPDATA%\OracleSessionHistory）の SQLite を使う。
-    /// Batch と Server は同じ DB ファイルを参照する必要がある。
+    /// AppDbContext を DI に登録する。
+    /// AppDb:Provider で SQLite / SQL Server を切り替える。Batch と Server は同じ DB を参照する必要がある。
     /// </summary>
     public static IServiceCollection AddAppDatabase(this IServiceCollection services, IConfiguration configuration)
     {
-        var cs = ResolveConnectionString(configuration);
-        services.AddDbContextFactory<AppDbContext>(o => o.UseSqlite(cs));
+        var provider = ResolveProvider(configuration);
+        var cs = ResolveConnectionString(configuration, provider);
+        services.AddDbContextFactory<AppDbContext>(o => Configure(o, provider, cs));
         return services;
     }
 
-    public static string ResolveConnectionString(IConfiguration configuration)
+    /// <summary>プロバイダーに応じて DbContext を設定する</summary>
+    public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder options, string provider, string connectionString) =>
+        provider switch
+        {
+            // 失敗時のリトライは行わない（Batch は次回の取得で再実行する。明示的なトランザクションとも両立させるため）
+            AppDbProviders.SqlServer => options.UseSqlServer(connectionString),
+            _ => options.UseSqlite(connectionString),
+        };
+
+    /// <summary>設定から DB の種類を決める。大文字小文字は区別しない</summary>
+    public static string ResolveProvider(IConfiguration configuration)
+    {
+        var value = configuration[ProviderKey];
+        if (string.IsNullOrWhiteSpace(value)) return AppDbProviders.Sqlite;
+        return AppDbProviders.All.FirstOrDefault(p => string.Equals(p, value.Trim(), StringComparison.OrdinalIgnoreCase))
+               ?? throw new InvalidOperationException(
+                   $"{ProviderKey} の値 '{value}' は不正です。{string.Join(" / ", AppDbProviders.All)} のいずれかを指定してください。");
+    }
+
+    /// <summary>
+    /// 接続文字列を決める。
+    /// SQLite で接続文字列 "AppDb" が無い場合はローカルアプリケーションデータ配下
+    /// （Windows: %LOCALAPPDATA%\OracleSessionHistory）のファイルを使う。SQL Server は指定必須。
+    /// </summary>
+    public static string ResolveConnectionString(IConfiguration configuration, string provider)
     {
         var cs = configuration.GetConnectionString(ConnectionStringName);
+        if (provider == AppDbProviders.SqlServer)
+        {
+            if (string.IsNullOrWhiteSpace(cs))
+                throw new InvalidOperationException($"{ProviderKey}={AppDbProviders.SqlServer} の場合は ConnectionStrings:{ConnectionStringName} を指定してください。");
+            return cs;
+        }
+
         if (string.IsNullOrWhiteSpace(cs))
         {
             var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OracleSessionHistory");
@@ -44,7 +87,7 @@ public static class AppDatabase
     }
 
     /// <summary>
-    /// スキーマを作成し、WAL モードを有効にする（Batch と Server の同時アクセスのため）。
+    /// スキーマを作成する。SQLite の場合は WAL モードを有効にする（Batch と Server の同時アクセスのため）。
     /// 両プロセスが同時に起動しても失敗しないようにリトライする。
     /// </summary>
     public static async Task InitializeAsync(IServiceProvider sp, ILogger logger, bool seedDemo, CancellationToken ct = default)
@@ -56,7 +99,8 @@ public static class AppDatabase
             {
                 await using var db = await factory.CreateDbContextAsync(ct);
                 await db.Database.EnsureCreatedAsync(ct);
-                await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;", ct);
+                if (db.Database.IsSqlite())
+                    await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;", ct);
 
                 if (seedDemo && !await db.Targets.AnyAsync(ct))
                 {

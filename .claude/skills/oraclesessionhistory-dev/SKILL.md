@@ -22,13 +22,13 @@ dotnet run --project src/OracleSessionHistory.AppHost
 ```
 
 - ログに出る Login URL で Aspire ダッシュボードを開き、`client` の URL から画面を開く。
-- 履歴 DB はリポジトリ直下の `.data/oraclesessionhistory.db`（SQLite）。
-- Development では監視対象が無いと Batch が「デモDB」（Provider=Demo）と過去 2 ヶ月分の履歴を作成する。Oracle 無しで全画面を確認できる。
+- 履歴 DB はリポジトリ直下の `.data/oraclesessionhistory.db`（SQLite）。`appsettings.json` はリリース用（SQL Server の仮の値）で、デバッグ時は AppHost / `launchSettings.json` が `AppDb__Provider=Sqlite` を指定している。`appsettings.Development.json` は使わない（リリース環境が 1 つのため）。
+- デバッグ起動時（`Collector__SeedDemoTarget=true`）は監視対象が無いと Batch が「デモDB」（Provider=Demo）と過去 2 ヶ月分の履歴を作成する。Oracle 無しで全画面を確認できる。
 - デモは 20 回に 1 回取得失敗を発生させる。失敗時に接続数が減らない（切断扱いにならない）ことを確認できる。
 
 ### Aspire を使わない場合
 
-ターミナルを 3 つ開き、同じ `ConnectionStrings__AppDb` を指定して起動する。
+ターミナルを 3 つ開き、同じ `ConnectionStrings__AppDb` を指定して起動する（`AppDb__Provider=Sqlite` とデモ登録は `launchSettings.json` で設定済み。省略時の DB は `%LOCALAPPDATA%/OracleSessionHistory/oraclesessionhistory.db`）。
 
 ```bash
 # Windows (PowerShell) の例: $env:ConnectionStrings__AppDb="Data Source=C:\work\oraclesessionhistory.db"

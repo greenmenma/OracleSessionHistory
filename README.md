@@ -33,7 +33,7 @@ cd src/OracleSessionHistory.Client && npm install && cd ../..
 dotnet run --project src/OracleSessionHistory.AppHost
 ```
 
-Aspire ダッシュボードから `client` の URL を開きます。Development 環境では Oracle が無くても動作確認できるよう「デモDB」が自動登録されます。
+Aspire ダッシュボードから `client` の URL を開きます。デバッグ起動時は履歴 DB に SQLite を使い、Oracle が無くても動作確認できるよう「デモDB」が自動登録されます。
 
 Windows（Visual Studio / VS Code / Rider）でのデバッグ方法は [docs/setup.md](docs/setup.md) を参照してください。
 
