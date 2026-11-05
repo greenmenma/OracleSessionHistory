@@ -92,9 +92,10 @@ User Id=MONITOR;Password=xxxx;Data Source=(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(H
 ### Server（IIS または Kestrel）
 
 ```powershell
-cd src\OracleSessionHistory.Client; npm ci; npm run build   # Server\wwwroot に出力
 dotnet publish src\OracleSessionHistory.Server -c Release -o C:\apps\OracleSessionHistory.Server
 ```
+
+発行時に Client のビルド（`npm ci` → `npm run build`）も行い、結果を発行先の `wwwroot` に配置します。発行するマシンには Node.js が必要です。Client のビルドを省略する場合は `-p:SkipClientBuild=true` を指定します。
 
 #### IIS の Default Web Site のサブフォルダに配置する
 

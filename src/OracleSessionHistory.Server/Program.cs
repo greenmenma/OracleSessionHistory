@@ -39,7 +39,7 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
-// 本番配置時は Client のビルド結果（wwwroot）の assets を配信する
+// 本番配置時は Client のビルド結果（発行時に wwwroot へ配置される）の assets を配信する
 app.UseStaticFiles();
 
 app.MapDefaultEndpoints();

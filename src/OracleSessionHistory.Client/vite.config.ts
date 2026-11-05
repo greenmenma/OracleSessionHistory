@@ -20,8 +20,8 @@ export default defineConfig({
     },
   },
   build: {
-    // 本番配置時は Server の wwwroot に出力する
-    outDir: '../OracleSessionHistory.Server/wwwroot',
+    // dist に出力する。Server の発行（dotnet publish）時に発行先の wwwroot へ配置される
+    outDir: 'dist',
     emptyOutDir: true,
   },
 })

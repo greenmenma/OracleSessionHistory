@@ -45,7 +45,7 @@ cd src/OracleSessionHistory.Client && npm run dev       # http://localhost:5173 
 - 接続数表：本日〜6日前・本日〜1ヶ月・1ヶ月〜2ヶ月の列
 - 設定：監視対象の追加・接続テスト、DB Link 接続元の追加 → 「DB Link 一覧を取得」→ 選択 → 保存
 - API の確認: `curl http://localhost:<client-port>/api/summary`
-- サブフォルダ配置の確認（IIS の代わり）: `npm run build` 後、`PathBase=/OracleSessionHistory` を指定して Server を起動し、`http://localhost:5292/OracleSessionHistory/` で画面と API が動くこと
+- サブフォルダ配置の確認（IIS の代わり）: `dotnet publish src/OracleSessionHistory.Server -c Release -o <出力先>`（Client も wwwroot に配置される）後、出力先で `PathBase=/OracleSessionHistory` を指定して `dotnet OracleSessionHistory.Server.dll` を起動し、`/OracleSessionHistory/` で画面と API が動くこと
 
 ## 4. トラブルシューティング
 

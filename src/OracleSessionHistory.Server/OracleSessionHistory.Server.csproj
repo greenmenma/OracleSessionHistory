@@ -11,4 +11,35 @@
     <InternalsVisibleTo Include="OracleSessionHistory.Tests" />
   </ItemGroup>
 
+  <!--
+    発行（dotnet publish）時に Client をビルドし、発行先の wwwroot に配置する。
+    dotnet build / dotnet run では実行しない（デバッグ時は Vite の開発サーバーを使う）。
+    Client のビルドを省略する場合は -p:SkipClientBuild=true を指定する。
+  -->
+  <PropertyGroup>
+    <ClientRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../OracleSessionHistory.Client'))</ClientRoot>
+    <ClientDist>$([System.IO.Path]::Combine('$(ClientRoot)', 'dist'))</ClientDist>
+  </PropertyGroup>
+
+  <Target Name="PublishClient" AfterTargets="ComputeFilesToPublish" Condition="'$(SkipClientBuild)' != 'true'">
+    <Exec Command="node --version" StandardOutputImportance="low" ContinueOnError="true">
+      <Output TaskParameter="ExitCode" PropertyName="NodeExitCode" />
+    </Exec>
+    <Error Condition="'$(NodeExitCode)' != '0'" Text="Client のビルドに Node.js が必要です。インストールしてから再実行してください（省略する場合は -p:SkipClientBuild=true）。" />
+
+    <Exec WorkingDirectory="$(ClientRoot)" Command="npm ci" />
+    <Exec WorkingDirectory="$(ClientRoot)" Command="npm run build" />
+
+    <ItemGroup>
+      <ClientDistFiles Include="$(ClientDist)/**" />
+      <!-- 発行先では wwwroot 配下に置く -->
+      <ResolvedFileToPublish Include="@(ClientDistFiles->'%(FullPath)')" Exclude="@(ResolvedFileToPublish)">
+        <RelativePath>wwwroot/%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+    <Error Condition="'@(ClientDistFiles)' == ''" Text="Client のビルド結果（$(ClientDist)）がありません。" />
+  </Target>
+
 </Project>

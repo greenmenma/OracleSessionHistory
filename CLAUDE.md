@@ -8,7 +8,7 @@ Oracle の接続履歴（gv$session）を収集・閲覧するシステム。
 |---|---|
 | `src/OracleSessionHistory.Batch` | Worker Service。監視対象ごとに数秒間隔でセッションを取得し、履歴 DB に保存する |
 | `src/OracleSessionHistory.Server` | ASP.NET Core Minimal API。画面用の API と Client の配信 |
-| `src/OracleSessionHistory.Client` | React + TypeScript（Vite）。サマリー・セッション履歴・接続数表・DB Link 利用元・設定。sln には `.esproj` で含める（`dotnet build` では npm を実行しない） |
+| `src/OracleSessionHistory.Client` | React + TypeScript（Vite）。サマリー・セッション履歴・接続数表・DB Link 利用元・設定。sln には `.esproj` で含める（`dotnet build` では npm を実行しない）。ビルド結果は `dist` に出力し、Server の `dotnet publish` 時に発行先の `wwwroot` へ配置する |
 | `src/OracleSessionHistory.Core` | Batch/Server 共通。エンティティ、DbContext、Oracle 取得、追跡ロジック |
 | `src/OracleSessionHistory.Migrations.Sqlite` / `.SqlServer` | 履歴 DB の EF Core マイグレーション（プロバイダーごと） |
 | `src/OracleSessionHistory.ServiceDefaults` | Aspire 共通設定（OpenTelemetry・ヘルスチェック） |
