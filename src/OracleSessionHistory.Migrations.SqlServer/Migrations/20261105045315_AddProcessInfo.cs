@@ -112,8 +112,10 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
                     table.PrimaryKey("PK_ProcessInspectionSettings", x => x.Id);
                 });
 
-            // 既存の履歴はプロセスが終了しているため取得対象外とし、アプリ名は PROGRAM で埋める
-            migrationBuilder.Sql("UPDATE Sessions SET AppName = COALESCE(Program, N'(不明)'), ProcInfoState = 'NotApplicable'");
+            // アプリ名は PROGRAM で埋める。切断済みの履歴はプロセスが終了しているため取得対象外にし、
+            // 接続中のクライアント（長時間つながる接続プール等）は移行後にプロセス情報を取得する
+            migrationBuilder.Sql("UPDATE Sessions SET AppName = COALESCE(Program, N'(不明)'), " +
+                "ProcInfoState = CASE WHEN IsConnected = 1 AND ProcessKind = 'Client' THEN 'Pending' ELSE 'NotApplicable' END");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Sessions_IsConnected_ProcInfoState",

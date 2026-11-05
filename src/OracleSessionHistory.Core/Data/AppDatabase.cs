@@ -100,6 +100,9 @@ public static class AppDatabase
         return builder.ToString();
     }
 
+    /// <summary>マイグレーションの SQL 1 文あたりのタイムアウト</summary>
+    private static readonly TimeSpan MigrationCommandTimeout = TimeSpan.FromMinutes(30);
+
     /// <summary>マイグレーション導入前から存在するテーブル</summary>
     private static readonly string[] LegacyTables = ["Targets", "Sessions", "LinkSources", "DbLinkUsages"];
 
@@ -114,7 +117,17 @@ public static class AppDatabase
         var pending = (await db.Database.GetPendingMigrationsAsync(ct)).ToList();
         if (pending.Count > 0)
             logger.LogInformation("アプリケーション DB のマイグレーションを適用します: {Migrations}", string.Join(", ", pending));
-        await db.Database.MigrateAsync(ct);
+        // 履歴が多い DB では列追加・データ更新・インデックス作成が既定のコマンドタイムアウト（30 秒）を超えることがある
+        var timeout = db.Database.GetCommandTimeout();
+        db.Database.SetCommandTimeout(MigrationCommandTimeout);
+        try
+        {
+            await db.Database.MigrateAsync(ct);
+        }
+        finally
+        {
+            db.Database.SetCommandTimeout(timeout);
+        }
     }
 
     /// <summary>EnsureCreated で作成された（履歴テーブルが無く、テーブルはある）DB に、最初のマイグレーションの適用記録を追加する</summary>

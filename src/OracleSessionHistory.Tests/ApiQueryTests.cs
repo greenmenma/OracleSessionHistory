@@ -138,3 +138,15 @@ public class ProcessSettingsPasswordTests
         Assert.Equal(expected, ProcessSettingsEndpoints.MergePassword(incoming, stored));
     }
 }
+
+public class ProcessSettingsTestPasswordTests
+{
+    [Fact]
+    public void 接続テストで保存済みパスワードを使うのは同じアカウントの場合だけ()
+    {
+        Assert.Equal("old", ProcessSettingsEndpoints.TestPassword(@"CORP\svc", "********", @"corp\SVC", "old"));
+        Assert.Null(ProcessSettingsEndpoints.TestPassword(@"CORP\other", "********", @"CORP\svc", "old"));
+        Assert.Null(ProcessSettingsEndpoints.TestPassword(@"CORP\other", null, @"CORP\svc", "old"));
+        Assert.Equal("typed", ProcessSettingsEndpoints.TestPassword(@"CORP\other", "typed", @"CORP\svc", "old"));
+    }
+}

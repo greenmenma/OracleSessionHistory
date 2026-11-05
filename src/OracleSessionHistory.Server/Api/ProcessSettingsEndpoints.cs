@@ -54,8 +54,10 @@ public static class ProcessSettingsEndpoints
             if (string.IsNullOrWhiteSpace(input.Host))
                 return Results.Ok(new { success = false, message = "端末名を入力してください" });
             if (Validate(input.Settings) is { } err) return Results.ValidationProblem(err);
-            var s = new ProcessInspectionSettings { Password = (await FindAsync(db, ct))?.Password };
+            var stored = await FindAsync(db, ct);
+            var s = new ProcessInspectionSettings();
             Apply(input.Settings, s);
+            s.Password = TestPassword(input.Settings.UserName, input.Settings.Password, stored?.UserName, stored?.Password);
             try
             {
                 return Results.Ok(new { success = true, message = await service.TestAsync(input.Host.Trim(), s, ct) });
@@ -75,6 +77,16 @@ public static class ProcessSettingsEndpoints
         "" => null,
         _ => incoming,
     };
+
+    /// <summary>
+    /// 接続テストに使うパスワード。保存済みのパスワード（入力がマスクまたは未指定）は、保存済みと同じアカウントの場合だけ使う
+    /// （アカウントを書き換えて、保存済みパスワードを別アカウント・任意の端末で試せないようにする）。
+    /// </summary>
+    internal static string? TestPassword(string? inputUser, string? inputPassword, string? storedUser, string? storedPassword)
+    {
+        if (inputPassword is not (null or ConnectionStringMasker.Mask)) return inputPassword.Length > 0 ? inputPassword : null;
+        return string.Equals(inputUser?.Trim(), storedUser?.Trim(), StringComparison.OrdinalIgnoreCase) ? storedPassword : null;
+    }
 
     private static Task<ProcessInspectionSettings?> FindAsync(AppDbContext db, CancellationToken ct) =>
         db.ProcessInspectionSettings.SingleOrDefaultAsync(x => x.Id == ProcessInspectionSettings.SingletonId, ct);

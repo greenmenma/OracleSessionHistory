@@ -184,6 +184,42 @@ public sealed class ProcessInfoServiceTests : IDisposable
         Assert.Equal(ProcInfoStates.Failed, Get(id).ProcInfoState);
     }
 
+    [Fact]
+    public async Task 応答しない端末はタイムアウトで打ち切り他の端末を処理する()
+    {
+        using (var db = _factory.CreateDbContext())
+        {
+            (await db.ProcessInspectionSettings.SingleAsync()).TimeoutSeconds = 1;
+            await db.SaveChangesAsync();
+        }
+        var hung = AddSession(1, "HUNG01", "1");
+        var good = AddSession(2, "WEB02", "2");
+        _inspector.Hang.Add("HUNG01");
+        _inspector.Results["WEB02"] = [W3wp(2, "Bar")];
+
+        var run = _service.RunOnceAsync(default);
+        var finished = await Task.WhenAny(run, Task.Delay(TimeSpan.FromSeconds(15)));
+
+        Assert.Same(run, finished);
+        Assert.Equal(ProcInfoStates.Failed, Get(hung).ProcInfoState);
+        Assert.Equal(ProcInfoStates.Resolved, Get(good).ProcInfoState);
+    }
+
+    [Fact]
+    public async Task 再試行待ちの失敗行が多くても新しい行を処理する()
+    {
+        _service.BatchSize = 3;
+        for (var i = 1; i <= 5; i++) AddSession(i, "DEAD01", i.ToString(), state: ProcInfoStates.Failed);
+        _inspector.Failures["DEAD01"] = "接続できません";
+        await _service.RunOnceAsync(default); // DEAD01 を再試行待ちにする
+        var fresh = AddSession(10, "WEB02", "10");
+        _inspector.Results["WEB02"] = [W3wp(10, "Bar")];
+
+        await _service.RunOnceAsync(default);
+
+        Assert.Equal(ProcInfoStates.Resolved, Get(fresh).ProcInfoState);
+    }
+
     private sealed class TestDbFactory(DbContextOptions<AppDbContext> options) : IDbContextFactory<AppDbContext>
     {
         public AppDbContext CreateDbContext() => new(options);
@@ -195,10 +231,13 @@ public sealed class ProcessInfoServiceTests : IDisposable
         public Dictionary<string, string> Failures { get; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, Exception> Unexpected { get; } = new(StringComparer.OrdinalIgnoreCase);
         public List<(string Host, int[] Pids, ProcessInspectorOptions Options)> Calls { get; } = [];
+        /// <summary>キャンセルを無視して応答しない端末（DCOM の接続待ちなど）</summary>
+        public HashSet<string> Hang { get; } = new(StringComparer.OrdinalIgnoreCase);
 
         public Task<IReadOnlyList<ClientProcessInfo>> InspectAsync(string host, IReadOnlyCollection<int> pids, ProcessInspectorOptions options, CancellationToken ct)
         {
             lock (Calls) Calls.Add((host, pids.Order().ToArray(), options));
+            if (Hang.Contains(host)) return new TaskCompletionSource<IReadOnlyList<ClientProcessInfo>>().Task;
             if (Failures.TryGetValue(host, out var msg)) throw new ProcessInspectionException(msg);
             if (Unexpected.TryGetValue(host, out var ex)) throw ex;
             return Task.FromResult<IReadOnlyList<ClientProcessInfo>>(Results.TryGetValue(host, out var r) ? r : []);

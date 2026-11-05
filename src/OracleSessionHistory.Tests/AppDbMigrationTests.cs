@@ -99,7 +99,7 @@ public sealed class AppDbMigrationTests : IDisposable
         await Assert.ThrowsAsync<InvalidOperationException>(() => AppDatabase.MigrateAsync(db, NullLogger.Instance));
     }
     [Fact]
-    public async Task 既存のセッションはアプリ名をPROGRAMで埋めプロセス情報の取得対象外にする()
+    public async Task 既存のセッションはアプリ名をPROGRAMで埋め接続中のクライアントだけ取得対象にする()
     {
         await using var db = new AppDbContext(_sqliteOptions);
         var migrator = db.GetService<IMigrator>();
@@ -112,13 +112,17 @@ public sealed class AppDbMigrationTests : IDisposable
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO Sessions (TargetId, InstId, Sid, Serial, LogonTime, Program, ProcessKind, FirstSeenAt, LastSeenAt, IsConnected, DisconnectUncertain) VALUES " +
             "(1, 1, 1, 1, '2026-11-01 09:00:00', 'w3wp.exe', 'Client', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 0, 0), " +
-            "(1, 1, 2, 1, '2026-11-01 09:00:00', NULL, 'Client', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 0, 0)");
+            "(1, 1, 2, 1, '2026-11-01 09:00:00', NULL, 'Client', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 0, 0), " +
+            "(1, 1, 3, 1, '2026-11-01 09:00:00', 'w3wp.exe', 'Client', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1, 0), " +
+            "(1, 1, 4, 1, '2026-11-01 09:00:00', 'ORACLE.EXE', 'DbLinkSuspect', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1, 0)");
 
         await migrator.MigrateAsync();
 
         var rows = await db.Sessions.OrderBy(s => s.Sid).ToListAsync();
-        Assert.Equal(["w3wp.exe", "(不明)"], rows.Select(r => r.AppName));
-        Assert.All(rows, r => Assert.Equal(ProcInfoStates.NotApplicable, r.ProcInfoState));
+        Assert.Equal(["w3wp.exe", "(不明)", "w3wp.exe", "ORACLE.EXE"], rows.Select(r => r.AppName));
+        // 接続中のクライアント（長時間つながる接続プール等）は移行後にプロセス情報を取得する
+        Assert.Equal([ProcInfoStates.NotApplicable, ProcInfoStates.NotApplicable, ProcInfoStates.Pending, ProcInfoStates.NotApplicable],
+            rows.Select(r => r.ProcInfoState));
     }
 
     /// <summary>マイグレーション導入前（EnsureCreated）の DB を再現する：Initial のスキーマを作り、履歴テーブルを消す</summary>

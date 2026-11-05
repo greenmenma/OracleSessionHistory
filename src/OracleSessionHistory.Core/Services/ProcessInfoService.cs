@@ -20,7 +20,7 @@ public sealed class ProcessInfoService(
     ILogger<ProcessInfoService> logger)
 {
     /// <summary>1 回に処理するセッション数の上限</summary>
-    private const int BatchSize = 500;
+    internal int BatchSize { get; set; } = 500;
     /// <summary>同時に問い合わせるホスト数</summary>
     private const int MaxParallelHosts = 4;
     private const int MaxErrorLength = 500;
@@ -38,7 +38,9 @@ public sealed class ProcessInfoService(
         var rows = await db.Sessions
             .Where(s => s.IsConnected && s.ProcessKind == ProcessKinds.Client
                         && (s.ProcInfoState == ProcInfoStates.Pending || s.ProcInfoState == ProcInfoStates.Failed))
-            .OrderBy(s => s.Id)
+            // 再試行待ちの端末の失敗行が多くても、新しい行が後回しにならないよう未取得を先に処理する
+            .OrderBy(s => s.ProcInfoState == ProcInfoStates.Pending ? 0 : 1)
+            .ThenBy(s => s.Id)
             .Take(BatchSize)
             .Select(s => new { Row = s, s.Target!.Provider })
             .ToListAsync(ct);
@@ -141,12 +143,16 @@ public sealed class ProcessInfoService(
         // 取得元がタイムアウトを守らない場合に備え、ホスト単位でも打ち切る（WinRM → DCOM の 2 回分＋余裕）
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(options.Timeout * 3);
+        Task<IReadOnlyList<ClientProcessInfo>>? task = null;
         try
         {
-            return new HostResult(await inspector.InspectAsync(host, pids, options, cts.Token), null);
+            task = inspector.InspectAsync(host, pids, options, cts.Token);
+            // CIM の同期呼び出しはキャンセルを無視して待ち続けることがあるため、待つ側でも打ち切る
+            return new HostResult(await task.WaitAsync(cts.Token), null);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
+            if (task is not null) ObserveAbandoned(task, host);
             return new HostResult(null, "タイムアウトしました");
         }
         catch (ProcessInspectionException ex)
@@ -160,6 +166,11 @@ public sealed class ProcessInfoService(
             return new HostResult(null, ex.Message);
         }
     }
+
+    /// <summary>打ち切った問い合わせが後で失敗した場合も、例外を握りつぶさずログに残す</summary>
+    private void ObserveAbandoned(Task task, string host) =>
+        _ = task.ContinueWith(t => logger.LogDebug(t.Exception, "{Host} への打ち切った問い合わせが失敗しました", host),
+            CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
 
     private static void SetState(TrackedSession row, string state, string? error, DateTime now)
     {
