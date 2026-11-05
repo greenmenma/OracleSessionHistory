@@ -126,7 +126,7 @@ public sealed class AppDbMigrationTests : IDisposable
     }
 
     [Fact]
-    public async Task このシステム自身の接続を種別Selfにし既存のDBLink利用元は取得対象にしない()
+    public async Task このシステム自身の接続を種別Selfにし既存のDBLink利用元は取得待ちにする()
     {
         await using var db = new AppDbContext(_sqliteOptions);
         var migrator = db.GetService<IMigrator>();
@@ -147,7 +147,8 @@ public sealed class AppDbMigrationTests : IDisposable
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO DbLinkUsages (LinkSourceId, TargetId, DbLinkName, MatchType, InstId, Sid, Serial, LogonTime, Program, FirstSeenAt, LastSeenAt, HitCount) VALUES " +
             "(1, 1, '(PROCESS)', 'PROCESS', 1, 1, 1, '2026-11-01 09:00:00', '受注入力.exe', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1), " +
-            "(1, 1, '(PROCESS)', 'PROCESS', 1, 2, 1, '2026-11-01 09:00:00', NULL, '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1)");
+            "(1, 1, '(PROCESS)', 'PROCESS', 1, 2, 1, '2026-11-01 09:00:00', NULL, '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1), " +
+            "(1, 1, '(PROCESS)', 'PROCESS', 1, 3, 1, '2026-11-01 09:00:00', ' ', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1)");
 
         await migrator.MigrateAsync();
 
@@ -155,8 +156,9 @@ public sealed class AppDbMigrationTests : IDisposable
         Assert.Equal([ProcessKinds.Self, ProcessKinds.Self, ProcessKinds.Client], sessions.Select(s => s.ProcessKind));
         Assert.Equal([ProcInfoStates.NotApplicable, ProcInfoStates.NotApplicable, ProcInfoStates.Pending], sessions.Select(s => s.ProcInfoState));
         var usages = await db.DbLinkUsages.OrderBy(u => u.Sid).ToListAsync();
-        Assert.Equal(["受注入力.exe", "(不明)"], usages.Select(u => u.AppName));
-        Assert.All(usages, u => Assert.Equal(ProcInfoStates.NotApplicable, u.ProcInfoState));
+        Assert.Equal(["受注入力.exe", "(不明)", "(不明)"], usages.Select(u => u.AppName));
+        // 移行時点で使われ続けている利用元も調べる（観測されなくなったものは ProcessInfoService が理由を付けて終える）
+        Assert.All(usages, u => Assert.Equal(ProcInfoStates.Pending, u.ProcInfoState));
     }
 
     /// <summary>マイグレーション導入前（EnsureCreated）の DB を再現する：Initial のスキーマを作り、履歴テーブルを消す</summary>

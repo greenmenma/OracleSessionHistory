@@ -57,10 +57,35 @@ public sealed class ApiQueryTests : IDisposable
         Add(ProcessKinds.DbLinkSuspect, app: "ORACLE.EXE");
         Add(ProcessKinds.JobSlave, app: "ORACLE.EXE (J000)");
         Add(ProcessKinds.Background, app: "ORACLE.EXE (PMON)");
+        Add(ProcessKinds.Self, app: "w3wp.exe");
 
         var kinds = SessionEndpoints.Filter(_db.Sessions, Search()).Select(s => s.ProcessKind).ToList();
 
         Assert.Equal([ProcessKinds.Client, ProcessKinds.DbLinkSuspect], kinds.Order());
+    }
+
+    [Fact]
+    public void DBLinkの可能性がある行には最後に観測した接続元のアプリを出す()
+    {
+        Add(ProcessKinds.DbLinkSuspect, app: "ORACLE.EXE");
+        var sessionId = _db.Sessions.Single().Id;
+        var l = new LinkSource { TargetId = _targetId, Name = "L", ConnectionString = "y" };
+        _db.LinkSources.Add(l);
+        _db.SaveChanges();
+        foreach (var (sid, app, machine, seen) in new[] { (1, "古い.exe", "OLD01", Today.AddHours(8)), (2, "IIS: Juchu", "KIKAN-AP01", Today.AddHours(9)) })
+        {
+            _db.DbLinkUsages.Add(new DbLinkUsage
+            {
+                LinkSourceId = l.Id, TargetId = _targetId, DbLinkName = "(PROCESS)", InstId = 1, Sid = sid, Serial = 1, LogonTime = Today,
+                AppName = app, Machine = machine, MatchedSessionId = sessionId, FirstSeenAt = seen, LastSeenAt = seen,
+            });
+        }
+        _db.SaveChanges();
+
+        var item = SessionEndpoints.Project(_db.Sessions).Single();
+
+        Assert.Equal(("IIS: Juchu", "KIKAN-AP01"), (item.LinkOriginApp, item.LinkOriginMachine));
+        Assert.Equal(2, item.DbLinkOriginCount);
     }
 
     [Fact]
@@ -147,6 +172,28 @@ public class ApiQuerySqlServerTests
         var sql = SessionEndpoints.Filter(db.Sessions,
             new SessionSearch(1, "connected", "foo", "WEB", null, null, "user", null, null, null, App: "IIS")).ToQueryString();
         Assert.Contains("[s].[ProcessKind] IN (N'Client', N'DbLinkSuspect')", sql);
+    }
+
+    [Fact]
+    public void 一覧の項目はSqlServerでも変換できる()
+    {
+        using var db = new AppDbContext((DbContextOptions<AppDbContext>)AppDatabase.Configure(new DbContextOptionsBuilder<AppDbContext>(),
+            AppDbProviders.SqlServer, "Server=localhost;Database=x;Integrated Security=true;TrustServerCertificate=true").Options);
+        var sql = SessionEndpoints.Project(db.Sessions).ToQueryString();
+        Assert.Contains("[DbLinkUsages]", sql);
+    }
+}
+
+public class ProcessSettingsTargetProgramsTests
+{
+    [Theory]
+    [InlineData(null, "w3wp.exe", "w3wp.exe")]
+    [InlineData("", "w3wp.exe", null)]
+    [InlineData("  ", "w3wp.exe", null)]
+    [InlineData(" dotnet.exe ", "w3wp.exe", "dotnet.exe")]
+    public void 実行ファイルの登録は項目が無ければ保存済みの値を使う(string? incoming, string? stored, string? expected)
+    {
+        Assert.Equal(expected, ProcessSettingsEndpoints.MergeTargetPrograms(incoming, stored));
     }
 }
 

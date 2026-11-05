@@ -23,6 +23,27 @@ public class SessionTrackerTests
     };
 
     [Fact]
+    public void このシステムのMODULEの新規セッションはSelfで取得対象外()
+    {
+        var r = SessionTracker.Apply(1, [], Snap(T0, Obs(1, program: "w3wp.exe") with { Module = "OracleSessionHistory" }), null, Interval);
+
+        var row = r.Added.Single();
+        Assert.Equal(ProcessKinds.Self, row.ProcessKind);
+        Assert.Equal(ProcInfoStates.NotApplicable, row.ProcInfoState);
+    }
+
+    [Fact]
+    public void MODULEが取れない観測があってもSelfのまま()
+    {
+        var row = SessionTracker.Apply(1, [], Snap(T0, Obs(1, program: "w3wp.exe") with { Module = "OracleSessionHistory" }), null, Interval).Added.Single();
+
+        SessionTracker.Apply(1, [row], Snap(T0.AddSeconds(5), Obs(1, program: "w3wp.exe") with { Module = null }), T0, Interval);
+        Assert.Equal(ProcessKinds.Self, row.ProcessKind);
+        SessionTracker.Apply(1, [row], Snap(T0.AddSeconds(10), Obs(1, program: "w3wp.exe") with { Module = "受注" }), T0.AddSeconds(5), Interval);
+        Assert.Equal(ProcessKinds.Self, row.ProcessKind);
+    }
+
+    [Fact]
     public void 新しいセッションは追加される()
     {
         var r = SessionTracker.Apply(1, [], Snap(T0, Obs(1), Obs(2)), null, Interval);

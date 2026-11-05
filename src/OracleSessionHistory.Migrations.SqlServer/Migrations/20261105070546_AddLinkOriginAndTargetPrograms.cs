@@ -106,8 +106,8 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
                 type: "datetime2",
                 nullable: true);
 
-            // 既存の DB Link 利用元は観測済みのため、プロセス情報は取得しない（新しく観測した行から取得する）
-            migrationBuilder.Sql("UPDATE DbLinkUsages SET AppName = COALESCE(Program, N'(不明)'), ProcInfoState = 'NotApplicable'");
+            // 既存の DB Link 利用元も取得待ちにする（使われ続けているものは取得し、観測されなくなったものは ProcessInfoService が理由を付けて終える）
+            migrationBuilder.Sql("UPDATE DbLinkUsages SET AppName = COALESCE(NULLIF(LTRIM(RTRIM(Program)), ''), N'(不明)'), ProcInfoState = 'Pending'");
 
             // このシステム自身の接続（MODULE = OracleSessionHistory）は種別を分けて一覧から除く
             migrationBuilder.Sql("UPDATE Sessions SET ProcessKind = 'Self', ProcInfoState = 'NotApplicable' " +
@@ -122,6 +122,9 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // 種別 Self を知らない旧バージョンでは通常のクライアントとして扱う
+            migrationBuilder.Sql("UPDATE Sessions SET ProcessKind = 'Client' WHERE ProcessKind = 'Self'");
+
             migrationBuilder.DropIndex(
                 name: "IX_DbLinkUsages_ProcInfoState_LastSeenAt",
                 table: "DbLinkUsages");

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using OracleSessionHistory.Core.Data;
 using OracleSessionHistory.Core.Entities;
 using OracleSessionHistory.Core.Processes;
+using OracleSessionHistory.Core.Tracking;
 
 namespace OracleSessionHistory.Core.Services;
 
@@ -41,6 +42,7 @@ public sealed class ProcessInfoService(
             .SingleOrDefaultAsync(s => s.Id == ProcessInspectionSettings.SingletonId, ct);
         if (settings is not { Enabled: true }) return new ProcessInfoOutcome(0, 0, 0);
         var options = ToOptions(settings);
+        WarnIfNoTargetPrograms(settings);
 
         var sessions = await db.Sessions
             .Where(s => s.IsConnected && s.ProcessKind == ProcessKinds.Client
@@ -54,9 +56,9 @@ public sealed class ProcessInfoService(
 
         var now = DateTime.Now;
         var since = now - LinkUsageWindow;
-        // 観測されなくなった DB Link 利用元の未取得行は、取得しないまま残さず理由を付けて終える
+        // 観測されなくなった DB Link 利用元の未取得・失敗行は、そのまま残さず理由を付けて終える
         await db.DbLinkUsages
-            .Where(u => u.ProcInfoState == ProcInfoStates.Pending && u.LastSeenAt < since)
+            .Where(u => (u.ProcInfoState == ProcInfoStates.Pending || u.ProcInfoState == ProcInfoStates.Failed) && u.LastSeenAt < since)
             .ExecuteUpdateAsync(x => x
                 .SetProperty(u => u.ProcInfoState, ProcInfoStates.NotApplicable)
                 .SetProperty(u => u.ProcInfoError, "接続元セッションの終了後のため取得していません")
@@ -66,7 +68,8 @@ public sealed class ProcessInfoService(
                         && (u.ProcInfoState == ProcInfoStates.Pending || u.ProcInfoState == ProcInfoStates.Failed))
             .OrderBy(u => u.ProcInfoState == ProcInfoStates.Pending ? 0 : 1)
             .ThenBy(u => u.Id)
-            .Take(BatchSize)
+            // 1 回の処理件数はセッションと合わせて BatchSize まで
+            .Take(Math.Max(0, BatchSize - sessions.Count))
             .Select(u => new { Row = u, u.LinkSource!.Provider })
             .ToListAsync(ct);
 
@@ -75,7 +78,7 @@ public sealed class ProcessInfoService(
             .ToList();
         if (rows.Count == 0) return new ProcessInfoOutcome(0, 0, 0);
 
-        var skipped = 0;
+        var skipped = new List<(IProcessInfoRecord Row, string State, string? Error, DateTime? At)>();
         var work = new List<(IProcessInfoRecord Row, string Provider, string Host, int Pid)>();
         foreach (var r in rows)
         {
@@ -84,6 +87,9 @@ public sealed class ProcessInfoService(
             // 監視対象への直接の接続は登録した実行ファイルだけ調べる。DB Link 利用元は接続元 DB の登録で対象を絞っているため常に調べる
             string? reason = r.Direct && !ClientProcessRules.IsTargetProgram(r.Row.Program, settings.TargetPrograms)
                     ? "プロセス情報を取得する実行ファイルに登録されていません"
+                // DB Link 利用元がジョブ・さらに別の DB Link 等の場合、端末は DB サーバー自身のため問い合わせない
+                : !r.Direct && ProgramClassifier.Classify(r.Row.Program, "USER", r.Row.Module) != ProcessKinds.Client
+                    ? "接続元が Oracle のプロセス（ジョブ・DB Link 等）のため取得しません"
                 : host is null ? "端末名（MACHINE）がありません"
                 : pid is null ? $"PROCESS（{r.Row.ClientProcess}）からプロセス ID を取得できません"
                 : ClientProcessRules.IsDriverDefaultProcess(r.Row.ClientProcess, r.Row.Program, r.Row.ClientDriver)
@@ -92,8 +98,8 @@ public sealed class ProcessInfoService(
                 : null;
             if (reason is not null)
             {
+                skipped.Add((r.Row, r.Row.ProcInfoState, r.Row.ProcInfoError, r.Row.ProcInfoAt));
                 SetState(r.Row, ProcInfoStates.NotApplicable, reason, now);
-                skipped++;
                 continue;
             }
             work.Add((r.Row, r.Provider, host!, pid!.Value));
@@ -159,8 +165,22 @@ public sealed class ProcessInfoService(
             }
         }
 
+        // 取得中に画面で設定（登録した実行ファイル・対象外端末）が保存された場合、古い設定での「対象外」は保存しない。
+        // 保存時の再取得の登録（RequeueSkippedAsync）より後にこの回の結果を書くと、調べ直されなくなるため
+        var updatedAt = await db.ProcessInspectionSettings.AsNoTracking()
+            .Where(s => s.Id == ProcessInspectionSettings.SingletonId).Select(s => (DateTime?)s.UpdatedAt).SingleOrDefaultAsync(ct);
+        if (updatedAt != settings.UpdatedAt)
+        {
+            foreach (var (row, state, error, at) in skipped)
+            {
+                row.ProcInfoState = state;
+                row.ProcInfoError = error;
+                row.ProcInfoAt = at;
+            }
+        }
+
         await SaveSkippingDeletedAsync(db, ct);
-        return new ProcessInfoOutcome(resolved, failed, skipped);
+        return new ProcessInfoOutcome(resolved, failed, skipped.Count);
     }
 
     /// <summary>
@@ -191,14 +211,35 @@ public sealed class ProcessInfoService(
     }
 
     /// <summary>
-    /// 設定（登録した実行ファイル・対象外端末）を変更したとき、対象外にしていた接続中のクライアントセッションを未取得に戻して調べ直す。
+    /// 設定（登録した実行ファイル・対象外端末）を変更したとき、対象外にしていた接続中のクライアントセッションと
+    /// 観測中の DB Link 利用元を未取得に戻して調べ直す。
     /// </summary>
-    public static Task<int> RequeueSkippedAsync(AppDbContext db, CancellationToken ct) =>
-        db.Sessions
+    public static async Task<int> RequeueSkippedAsync(AppDbContext db, CancellationToken ct)
+    {
+        var n = await db.Sessions
             .Where(s => s.IsConnected && s.ProcessKind == ProcessKinds.Client && s.ProcInfoState == ProcInfoStates.NotApplicable)
             .ExecuteUpdateAsync(x => x
                 .SetProperty(s => s.ProcInfoState, ProcInfoStates.Pending)
                 .SetProperty(s => s.ProcInfoError, (string?)null), ct);
+        var since = DateTime.Now - LinkUsageWindow;
+        n += await db.DbLinkUsages
+            .Where(u => u.LastSeenAt >= since && u.ProcInfoState == ProcInfoStates.NotApplicable)
+            .ExecuteUpdateAsync(x => x
+                .SetProperty(u => u.ProcInfoState, ProcInfoStates.Pending)
+                .SetProperty(u => u.ProcInfoError, (string?)null), ct);
+        return n;
+    }
+
+    private bool _warnedNoTargetPrograms;
+
+    /// <summary>実行ファイルが未登録のときは直接の接続を一切調べないため、気づけるよう一度だけ警告する（登録されたら再度警告できるよう戻す）</summary>
+    private void WarnIfNoTargetPrograms(ProcessInspectionSettings settings)
+    {
+        var empty = string.IsNullOrWhiteSpace(settings.TargetPrograms);
+        if (empty && !_warnedNoTargetPrograms)
+            logger.LogWarning("プロセス情報を取得する実行ファイルが登録されていないため、監視対象への直接の接続はプロセス情報を取得しません（設定画面で登録してください。DB Link 利用元は取得します）");
+        _warnedNoTargetPrograms = empty;
+    }
 
     /// <summary>設定画面の接続テスト</summary>
     public Task<string> TestAsync(string host, ProcessInspectionSettings settings, CancellationToken ct) =>

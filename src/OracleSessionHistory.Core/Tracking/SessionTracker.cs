@@ -136,7 +136,10 @@ public static class SessionTracker
             if (o.SqlText is not null) row.LastSqlText = o.SqlText;
         }
 
-        row.ProcessKind = ProgramClassifier.Classify(o.Program, o.SessionType, o.Module);
+        // このシステム自身の接続は MODULE で判定する。MODULE は後から設定されるため取れない観測もあり、
+        // 前回までの値で補い、いったん Self と判定した行は Self のままにする（一覧に出たり消えたりしないように）
+        if (row.ProcessKind != ProcessKinds.Self)
+            row.ProcessKind = ProgramClassifier.Classify(o.Program, o.SessionType, row.Module);
 
         // ジョブ情報は一度取れたら保持する（ジョブ終了後も何のジョブだったか残すため）
         if (o.JobName is not null)

@@ -142,6 +142,11 @@ export default function ProcessSettingsSection() {
             onChange={(e) => set('targetPrograms', e.target.value)}
           />
         </label>
+        {f.enabled && !f.targetPrograms?.trim() && (
+          <div className="alert warn">
+            実行ファイルが登録されていないため、監視対象に直接接続しているセッションのプロセス情報は取得しません。
+          </div>
+        )}
         <small className="muted">
           監視対象に直接接続しているセッションは、ここに登録した実行ファイルだけ調べます（未登録なら調べません）。DB Link
           利用元のセッションは登録に関係なく調べます。

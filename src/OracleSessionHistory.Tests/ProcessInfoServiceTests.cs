@@ -370,6 +370,67 @@ public sealed class ProcessInfoServiceTests : IDisposable
         Assert.Equal("w3wp.exe", u.AppName);
     }
 
+    [Theory]
+    [InlineData("ORACLE.EXE (J001)")]
+    [InlineData("oracle@kikan-db (J000)")]
+    [InlineData("ORACLE.EXE")]
+    public async Task DBLink利用元がOracle内部プロセスや別のDBLinkなら調べない(string program)
+    {
+        var id = AddUsage(1, "KIKAN-DB01", "3120:4410", program);
+
+        await _service.RunOnceAsync(default);
+
+        Assert.Empty(_inspector.Calls);
+        var u = GetUsage(id);
+        Assert.Equal(ProcInfoStates.NotApplicable, u.ProcInfoState);
+        Assert.Equal(program, u.AppName);
+    }
+
+    [Fact]
+    public async Task 取得中に設定が変わったら対象外の判断を保存しない()
+    {
+        var target = AddSession(1, "WEB01", "1");
+        var unregistered = AddSession(2, "WEB02", "2", program: "sqlplus.exe");
+        _inspector.Results["WEB01"] = [W3wp(1, "Foo")];
+        // 問い合わせ中に画面から設定（sqlplus.exe を追加）を保存した想定
+        _inspector.OnInspect = () =>
+        {
+            using var db = _factory.CreateDbContext();
+            db.ProcessInspectionSettings.ExecuteUpdate(x => x
+                .SetProperty(s => s.TargetPrograms, "w3wp.exe, sqlplus.exe").SetProperty(s => s.UpdatedAt, DateTime.Now));
+        };
+
+        await _service.RunOnceAsync(default);
+
+        Assert.Equal(ProcInfoStates.Resolved, Get(target).ProcInfoState);
+        Assert.Equal(ProcInfoStates.Pending, Get(unregistered).ProcInfoState);
+    }
+
+    [Fact]
+    public async Task 取得中にDBLink利用元が削除されても他の結果は保存する()
+    {
+        var deleted = AddUsage(1, "KIKAN-AP01", "1", "w3wp.exe");
+        var kept = AddUsage(2, "KIKAN-AP01", "2", "w3wp.exe");
+        _inspector.Results["KIKAN-AP01"] = [W3wp(1, "A"), W3wp(2, "B")];
+        _beforeSave.Arm($"DELETE FROM DbLinkUsages WHERE Id = {deleted}");
+
+        await _service.RunOnceAsync(default);
+
+        Assert.Equal("IIS: B", GetUsage(kept).AppName);
+    }
+
+    [Fact]
+    public async Task 一回に処理する件数はセッションとDBLink利用元の合計で上限まで()
+    {
+        _service.BatchSize = 1;
+        AddSession(1, "WEB01", "1");
+        AddUsage(1, "WEB01", "2", "w3wp.exe");
+
+        await _service.RunOnceAsync(default);
+
+        Assert.Equal([1], _inspector.Calls.Single().Pids);
+    }
+
     [Fact]
     public async Task 同じ端末のセッションとDBLink利用元はまとめて問い合わせる()
     {
@@ -393,7 +454,8 @@ public sealed class ProcessInfoServiceTests : IDisposable
         var u = GetUsage(old);
         Assert.Equal(ProcInfoStates.NotApplicable, u.ProcInfoState);
         Assert.Contains("終了", u.ProcInfoError);
-        Assert.Equal(ProcInfoStates.Failed, GetUsage(oldFailed).ProcInfoState);
+        Assert.Equal(ProcInfoStates.NotApplicable, GetUsage(oldFailed).ProcInfoState);
+        Assert.Contains("終了", GetUsage(oldFailed).ProcInfoError);
     }
 
     [Fact]
@@ -422,10 +484,13 @@ public sealed class ProcessInfoServiceTests : IDisposable
         public List<(string Host, int[] Pids, ProcessInspectorOptions Options)> Calls { get; } = [];
         /// <summary>キャンセルを無視して応答しない端末（DCOM の接続待ちなど）</summary>
         public HashSet<string> Hang { get; } = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>問い合わせ中に実行する処理（設定の同時変更の再現用）</summary>
+        public Action? OnInspect { get; set; }
 
         public Task<IReadOnlyList<ClientProcessInfo>> InspectAsync(string host, IReadOnlyCollection<int> pids, ProcessInspectorOptions options, CancellationToken ct)
         {
             lock (Calls) Calls.Add((host, pids.Order().ToArray(), options));
+            OnInspect?.Invoke();
             if (Hang.Contains(host)) return new TaskCompletionSource<IReadOnlyList<ClientProcessInfo>>().Task;
             if (Failures.TryGetValue(host, out var msg)) throw new ProcessInspectionException(msg);
             if (Unexpected.TryGetValue(host, out var ex)) throw ex;
