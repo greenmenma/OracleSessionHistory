@@ -6,6 +6,7 @@ import SessionDetailPanel from '../components/SessionDetailPanel'
 import KindBadge from '../components/KindBadge'
 import Pager from '../components/Pager'
 import AppCell from '../components/AppCell'
+import { replaceQuery } from '../router'
 
 interface Filters {
   q: string
@@ -19,6 +20,17 @@ interface Filters {
   to: string
   /** Oracle 内部プロセス（ジョブ・パラレル実行等）も表示する */
   includeInternal: boolean
+  /** 実行端末・アプリを完全一致で検索する（接続アプリ表からの遷移） */
+  exact: boolean
+}
+
+type BoolKey = 'includeInternal' | 'exact'
+
+/** 検索条件を URL のクエリにする（空・false は省く） */
+function toQuery(f: Filters): Record<string, string | undefined> {
+  const q: Record<string, string | undefined> = {}
+  for (const [k, v] of Object.entries(f)) q[k] = typeof v === 'boolean' ? (v ? 'true' : undefined) : v
+  return q
 }
 
 function fromQuery(query: URLSearchParams): Filters {
@@ -34,6 +46,7 @@ function fromQuery(query: URLSearchParams): Filters {
     from: query.get('from') ?? '',
     to: query.get('to') ?? '',
     includeInternal: query.get('includeInternal') === 'true',
+    exact: query.get('exact') === 'true',
   }
 }
 
@@ -61,6 +74,7 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
         from: filters.from || undefined,
         to: filters.to || undefined,
         includeInternal: filters.includeInternal || undefined,
+        exact: filters.exact || undefined,
         page,
         pageSize: 50,
       }),
@@ -68,20 +82,30 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
     autoRefresh ? 10000 : undefined,
   )
 
-  const set = (k: Exclude<keyof Filters, 'includeInternal'>) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+  // 検索条件を URL に残す（リロード・リンク共有で同じ条件を開けるように）
+  const apply = (f: Filters) => {
+    setFilters(f)
+    setPage(1)
+    replaceQuery('/sessions', toQuery(f))
+  }
+
+  const setBool = (k: BoolKey, applyNow: boolean) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm({ ...form, [k]: e.target.checked })
+    if (applyNow) apply({ ...filters, [k]: e.target.checked })
+  }
+
+  const set = (k: Exclude<keyof Filters, BoolKey>) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm({ ...form, [k]: e.target.value })
 
   const search = (e: React.FormEvent) => {
     e.preventDefault()
-    setFilters(form)
-    setPage(1)
+    apply(form)
   }
 
   const clear = () => {
     const empty = fromQuery(new URLSearchParams())
     setForm(empty)
-    setFilters(empty)
-    setPage(1)
+    apply(empty)
   }
 
   return (
@@ -133,18 +157,13 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
           <input type="datetime-local" value={form.to} onChange={set('to')} />
         </label>
         <label className="check" title="ORACLE.EXE (J000) などのジョブ・パラレル実行・バックグラウンドプロセス。DB Link の可能性があるものは常に表示します">
-          <input
-            type="checkbox"
-            checked={form.includeInternal}
-            onChange={(e) => {
-              // チェックの切り替えはすぐに反映する
-              const next = { ...form, includeInternal: e.target.checked }
-              setForm(next)
-              setFilters({ ...filters, includeInternal: e.target.checked })
-              setPage(1)
-            }}
-          />
+          {/* チェックの切り替えはすぐに反映する */}
+          <input type="checkbox" checked={form.includeInternal} onChange={setBool('includeInternal', true)} />
           Oracle 内部プロセスも表示
+        </label>
+        <label className="check" title="実行端末・アプリを部分一致ではなく完全一致で検索します（接続アプリから開いた場合）">
+          <input type="checkbox" checked={form.exact} onChange={setBool('exact', false)} />
+          端末・アプリを完全一致
         </label>
         <div className="actions">
           <button type="submit" className="primary">

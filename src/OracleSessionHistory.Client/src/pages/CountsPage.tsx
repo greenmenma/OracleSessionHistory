@@ -77,7 +77,8 @@ export default function CountsPage({ targetId }: { targetId?: number }) {
               {data?.rows.map((r) => (
                 <tr
                   key={`${r.machine}|${r.appName}`}
-                  onClick={() => navigate('/sessions', { machine: r.machine ?? '', app: r.appName })}
+                  // 部分一致だと WEB01 で WEB011 も出るため完全一致で開く（端末なしは「(不明)」で指定）
+                  onClick={() => navigate('/sessions', { machine: r.machine || '(不明)', app: r.appName, exact: 'true' })}
                   title="クリックでセッション履歴を表示"
                 >
                   <td>{r.machine ?? '(不明)'}</td>

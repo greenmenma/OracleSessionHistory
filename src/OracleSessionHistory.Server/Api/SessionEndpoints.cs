@@ -15,11 +15,14 @@ public sealed record SessionListItem(
 public sealed record SessionSearch(
     int? TargetId, string? State, string? Q, string? Machine, string? Program, string? Username, string? OsUser,
     string? Kind, DateTime? From, DateTime? To, int Page = 1, int PageSize = 50,
-    string? App = null, bool IncludeInternal = false);
+    string? App = null, bool IncludeInternal = false, bool Exact = false);
 
 /// <summary>セッション履歴の検索 API</summary>
 public static class SessionEndpoints
 {
+    /// <summary>完全一致の検索で「端末なし（MACHINE が空）」を表す値。接続アプリ表の「(不明)」から遷移した場合に使う</summary>
+    public const string UnknownMachine = "(不明)";
+
     public static void MapSessionEndpoints(this IEndpointRouteBuilder app)
     {
         var g = app.MapGroup("/api");
@@ -97,7 +100,14 @@ public static class SessionEndpoints
                 EF.Functions.Like(x.AppDetail, p, "\\") || EF.Functions.Like(x.ProcPath, p, "\\") ||
                 EF.Functions.Like(x.ProcCommandLine, p, "\\") || EF.Functions.Like(x.ProcOwner, p, "\\"));
         }
-        if (!string.IsNullOrWhiteSpace(s.Machine)) q = q.Where(x => EF.Functions.Like(x.Machine, QueryHelpers.Contains(s.Machine.Trim()), "\\"));
+        if (!string.IsNullOrWhiteSpace(s.Machine))
+        {
+            var m = s.Machine.Trim();
+            // 完全一致：接続アプリ表から遷移した場合（部分一致だと WEB01 で WEB011 も出てしまう）
+            q = !s.Exact ? q.Where(x => EF.Functions.Like(x.Machine, QueryHelpers.Contains(m), "\\"))
+                : m == UnknownMachine ? q.Where(x => x.Machine == null || x.Machine == "")
+                : q.Where(x => x.Machine == m);
+        }
         if (!string.IsNullOrWhiteSpace(s.Program)) q = q.Where(x => EF.Functions.Like(x.Program, QueryHelpers.Contains(s.Program.Trim()), "\\"));
         if (!string.IsNullOrWhiteSpace(s.Username)) q = q.Where(x => EF.Functions.Like(x.Username, QueryHelpers.Contains(s.Username.Trim()), "\\"));
         if (!string.IsNullOrWhiteSpace(s.OsUser))
@@ -105,7 +115,11 @@ public static class SessionEndpoints
             var p = QueryHelpers.Contains(s.OsUser.Trim());
             q = q.Where(x => EF.Functions.Like(x.OsUser, p, "\\") || EF.Functions.Like(x.ProcOwner, p, "\\"));
         }
-        if (!string.IsNullOrWhiteSpace(s.App)) q = q.Where(x => EF.Functions.Like(x.AppName, QueryHelpers.Contains(s.App.Trim()), "\\"));
+        if (!string.IsNullOrWhiteSpace(s.App))
+        {
+            var app = s.App.Trim();
+            q = s.Exact ? q.Where(x => x.AppName == app) : q.Where(x => EF.Functions.Like(x.AppName, QueryHelpers.Contains(app), "\\"));
+        }
         // Oracle 内部プロセス（ジョブ・パラレル実行等）は既定で表示しない。種別を明示した場合はそれに従う
         if (!string.IsNullOrWhiteSpace(s.Kind)) q = q.Where(x => x.ProcessKind == s.Kind);
         else if (!s.IncludeInternal) q = q.WhereVisible();

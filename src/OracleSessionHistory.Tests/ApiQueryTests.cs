@@ -90,6 +90,31 @@ public sealed class ApiQueryTests : IDisposable
     }
 
     [Fact]
+    public void 完全一致では端末とアプリが同じものだけ()
+    {
+        Add(ProcessKinds.Client, machine: "WEB01", app: "IIS: Pool");
+        Add(ProcessKinds.Client, machine: "WEB01", app: "IIS: Pool2");
+        Add(ProcessKinds.Client, machine: "WEB011", app: "IIS: Pool");
+
+        var rows = SessionEndpoints.Filter(_db.Sessions,
+            new SessionSearch(null, null, null, "WEB01", null, null, null, null, null, null, App: "IIS: Pool", Exact: true)).ToList();
+
+        Assert.Equal(("WEB01", "IIS: Pool"), (rows.Single().Machine, rows.Single().AppName));
+    }
+
+    [Fact]
+    public void 完全一致で端末が不明の場合は端末の無い行()
+    {
+        Add(ProcessKinds.Client, machine: "", app: "IIS: Pool");
+        Add(ProcessKinds.Client, machine: "WEB01", app: "IIS: Pool");
+
+        var rows = SessionEndpoints.Filter(_db.Sessions,
+            new SessionSearch(null, null, null, SessionEndpoints.UnknownMachine, null, null, null, null, null, null, App: "IIS: Pool", Exact: true)).ToList();
+
+        Assert.Equal("", rows.Single().Machine);
+    }
+
+    [Fact]
     public async Task 接続アプリ表は端末とアプリ単位で集計し内部プロセスを除く()
     {
         Add(ProcessKinds.Client, "WEB01", "IIS: Foo", "Default Web Site/foo", Today.AddHours(9), owner: @"IIS APPPOOL\Foo");
