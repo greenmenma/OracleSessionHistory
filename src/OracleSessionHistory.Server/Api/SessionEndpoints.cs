@@ -9,11 +9,13 @@ public sealed record SessionListItem(
     long Id, int TargetId, string TargetName, int InstId, int Sid, int Serial, DateTime LogonTime,
     string? Username, string? SchemaName, string? OsUser, string? Machine, string? Program, string? Module,
     string? Status, string ProcessKind, string? JobName, bool IsConnected, DateTime FirstSeenAt, DateTime LastSeenAt,
-    DateTime? DisconnectedAt, bool DisconnectUncertain, int DbLinkOriginCount);
+    DateTime? DisconnectedAt, bool DisconnectUncertain, int DbLinkOriginCount,
+    string AppName, string? AppDetail, string? ProcOwner, string ProcInfoState, string? ProcInfoError);
 
 public sealed record SessionSearch(
     int? TargetId, string? State, string? Q, string? Machine, string? Program, string? Username, string? OsUser,
-    string? Kind, DateTime? From, DateTime? To, int Page = 1, int PageSize = 50);
+    string? Kind, DateTime? From, DateTime? To, int Page = 1, int PageSize = 50,
+    string? App = null, bool IncludeInternal = false);
 
 /// <summary>セッション履歴の検索 API</summary>
 public static class SessionEndpoints
@@ -36,7 +38,8 @@ public static class SessionEndpoints
                     x.Id, x.TargetId, x.Target!.Name, x.InstId, x.Sid, x.Serial, x.LogonTime,
                     x.Username, x.SchemaName, x.OsUser, x.Machine, x.Program, x.Module,
                     x.Status, x.ProcessKind, x.JobName, x.IsConnected, x.FirstSeenAt, x.LastSeenAt,
-                    x.DisconnectedAt, x.DisconnectUncertain, x.DbLinkOrigins.Count))
+                    x.DisconnectedAt, x.DisconnectUncertain, x.DbLinkOrigins.Count,
+                    x.AppName, x.AppDetail, x.ProcOwner, x.ProcInfoState, x.ProcInfoError))
                 .ToListAsync();
             return new PagedResult<SessionListItem>(items, total, page, pageSize);
         });
@@ -90,13 +93,22 @@ public static class SessionEndpoints
                 EF.Functions.Like(x.OsUser, p, "\\") || EF.Functions.Like(x.Module, p, "\\") ||
                 EF.Functions.Like(x.Action, p, "\\") || EF.Functions.Like(x.Terminal, p, "\\") ||
                 EF.Functions.Like(x.ClientInfo, p, "\\") || EF.Functions.Like(x.JobName, p, "\\") ||
-                EF.Functions.Like(x.LastSqlText, p, "\\"));
+                EF.Functions.Like(x.LastSqlText, p, "\\") || EF.Functions.Like(x.AppName, p, "\\") ||
+                EF.Functions.Like(x.AppDetail, p, "\\") || EF.Functions.Like(x.ProcPath, p, "\\") ||
+                EF.Functions.Like(x.ProcCommandLine, p, "\\") || EF.Functions.Like(x.ProcOwner, p, "\\"));
         }
         if (!string.IsNullOrWhiteSpace(s.Machine)) q = q.Where(x => EF.Functions.Like(x.Machine, QueryHelpers.Contains(s.Machine.Trim()), "\\"));
         if (!string.IsNullOrWhiteSpace(s.Program)) q = q.Where(x => EF.Functions.Like(x.Program, QueryHelpers.Contains(s.Program.Trim()), "\\"));
         if (!string.IsNullOrWhiteSpace(s.Username)) q = q.Where(x => EF.Functions.Like(x.Username, QueryHelpers.Contains(s.Username.Trim()), "\\"));
-        if (!string.IsNullOrWhiteSpace(s.OsUser)) q = q.Where(x => EF.Functions.Like(x.OsUser, QueryHelpers.Contains(s.OsUser.Trim()), "\\"));
+        if (!string.IsNullOrWhiteSpace(s.OsUser))
+        {
+            var p = QueryHelpers.Contains(s.OsUser.Trim());
+            q = q.Where(x => EF.Functions.Like(x.OsUser, p, "\\") || EF.Functions.Like(x.ProcOwner, p, "\\"));
+        }
+        if (!string.IsNullOrWhiteSpace(s.App)) q = q.Where(x => EF.Functions.Like(x.AppName, QueryHelpers.Contains(s.App.Trim()), "\\"));
+        // Oracle 内部プロセス（ジョブ・パラレル実行等）は既定で表示しない。種別を明示した場合はそれに従う
         if (!string.IsNullOrWhiteSpace(s.Kind)) q = q.Where(x => x.ProcessKind == s.Kind);
+        else if (!s.IncludeInternal) q = q.WhereVisible();
         // 期間：指定期間に接続していたセッション
         if (s.From is { } from) q = q.Where(x => x.LastSeenAt >= from);
         if (s.To is { } to) q = q.Where(x => x.LogonTime <= to);

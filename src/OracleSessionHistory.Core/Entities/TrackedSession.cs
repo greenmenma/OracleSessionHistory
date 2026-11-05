@@ -116,7 +116,10 @@ public static class ProcessKinds
     /// <summary>BACKGROUND セッション</summary>
     public const string Background = "Background";
 
-    /// <summary>画面に既定で表示する種別（接続アプリの特定に必要なもの）。それ以外の Oracle 内部プロセスは既定で非表示</summary>
+    /// <summary>
+    /// 画面に既定で表示する種別（接続アプリの特定に必要なもの）。それ以外の Oracle 内部プロセスは既定で非表示。
+    /// 変更する場合は <see cref="Data.SessionQueries.WhereVisible"/> も合わせて変更する。
+    /// </summary>
     public static readonly IReadOnlyList<string> Visible = [Client, DbLinkSuspect];
 }
 

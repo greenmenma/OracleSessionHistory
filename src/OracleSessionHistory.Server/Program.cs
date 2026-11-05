@@ -47,6 +47,7 @@ app.MapTargetEndpoints();
 app.MapSessionEndpoints();
 app.MapReportEndpoints();
 app.MapLinkEndpoints();
+app.MapProcessSettingsEndpoints();
 
 // 画面はハッシュルーターのため、index.html はアプリのルートだけで返す。
 // ルート以外の不明なパスで返すと相対パスの assets を解決できないため、ルートへリダイレクトする。
