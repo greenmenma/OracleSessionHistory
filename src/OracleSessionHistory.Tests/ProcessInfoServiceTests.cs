@@ -376,6 +376,21 @@ public sealed class ProcessInfoServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task アプリ名はパスワードを隠す前の値で決める()
+    {
+        var id = AddSession(1, "BATCH01", "300", program: "sqlplus.exe");
+        _inspector.Results["BATCH01"] =
+        [
+            new(300, "sqlplus.exe", null, "sqlplus scott/tiger@db", null, Logon.AddMinutes(-1), "powershell.exe", null, null,
+                [new(290, "powershell.exe", "powershell -File scripts/run.ps1", Logon.AddMinutes(-2)), new(10, "jp1.exe", null, null)]),
+        ];
+
+        await _service.RunOnceAsync(default);
+
+        Assert.Equal("sqlplus.exe: run.ps1", Get(id).AppName);
+    }
+
+    [Fact]
     public async Task DBLink利用元のアプリが確定したら監視対象側のセッションに反映する()
     {
         var link = AddSession(1, "KIKAN-DB01", "3120:4410", program: "ORACLE.EXE", kind: ProcessKinds.DbLinkSuspect, state: ProcInfoStates.NotApplicable);

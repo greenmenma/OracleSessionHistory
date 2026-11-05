@@ -73,6 +73,16 @@ public class ClientProcessRulesTests
     [InlineData("sqlplus / as sysdba", "sqlplus / as sysdba")]
     [InlineData("dotnet bin/app.dll", "dotnet bin/app.dll")]
     [InlineData("java -jar http://host/x.jar", "java -jar http://host/x.jar")]
+    [InlineData("sqlplus scott/\"p@ss w\"@db", "sqlplus scott/********@db")]
+    [InlineData("sqlplus \"scott\"/tiger@db", "sqlplus \"scott\"/********@db")]
+    [InlineData("java -Durl=jdbc:oracle:thin:scott/tiger@host:1521:orcl -jar a.jar", "java -Durl=jdbc:oracle:thin:scott/********@host:1521:orcl -jar a.jar")]
+    [InlineData("app.exe \"User Id=scott;Password=tiger;Data Source=db\"", "app.exe \"User Id=scott;Password=********;Data Source=db\"")]
+    [InlineData("app.exe /pwd=tiger", "app.exe /pwd=********")]
+    [InlineData("app.exe --password tiger --user scott", "app.exe --password ******** --user scott")]
+    [InlineData("app.exe -password=tiger", "app.exe -password=********")]
+    // 隠しすぎない（ファイルのパス・exp という単語）
+    [InlineData("sqlldr userid=scott/tiger control=ctl/x.ctl data=data/in.csv", "sqlldr userid=scott/******** control=ctl/x.ctl data=data/in.csv")]
+    [InlineData("dotnet bin/app.dll --mode exp", "dotnet bin/app.dll --mode exp")]
     [InlineData(null, null)]
     public void MaskCredentialsはユーザとパスワードのパスワードを隠す(string? commandLine, string? expected)
     {

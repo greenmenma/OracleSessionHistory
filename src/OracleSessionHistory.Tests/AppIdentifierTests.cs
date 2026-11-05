@@ -91,6 +91,37 @@ public class AppIdentifierTests
         Assert.Equal(("sqlplus.exe: run.ps1", @"実行元: D:\ps\run.ps1（powershell.exe ← svchost.exe）"), AppIdentifier.Identify(p, "sqlplus.exe", null, null));
     }
 
+    [Theory]
+    [InlineData("powershell -NoP -enc AAAA", "svchost.exe")]
+    [InlineData("powershell.exe -Com \"sqlplus x\"", "svchost.exe")]
+    [InlineData("powershell.exe \"sqlplus x\"", "svchost.exe")]
+    [InlineData("powershell.exe -ExecutionPolicy Bypass -Command \"& 'D:\\Batch\\x.ps1'\"", "x.ps1")]
+    [InlineData("powershell.exe -NoLogo", "powershell.exe")]
+    [InlineData("pwsh.exe", "pwsh.exe")]
+    public void sqlplusのPowerShellの実行元(string cmd, string expected)
+    {
+        var p = Sqlplus(Parent(cmd.StartsWith("pwsh") ? "pwsh.exe" : "powershell.exe", cmd), Parent("svchost.exe", null));
+        Assert.Equal("sqlplus.exe: " + expected, AppIdentifier.Identify(p, "sqlplus.exe", null, null).AppName);
+    }
+
+    [Theory]
+    [InlineData("cmd /k set X=1", "cmd.exe")]
+    [InlineData("cmd /c \"sqlplus u/p@d @x.sql > D:\\log\\a.cmd\"", "explorer.exe")]
+    [InlineData("cmd /c \"call D:\\Batch\\x.bat\"", "x.bat")]
+    [InlineData("cmd /k D:\\Batch\\x.bat", "x.bat")]
+    public void sqlplusのcmdの実行元(string cmd, string expected)
+    {
+        var p = Sqlplus(Parent("cmd.exe", cmd), Parent("explorer.exe", null));
+        Assert.Equal("sqlplus.exe: " + expected, AppIdentifier.Identify(p, "sqlplus.exe", null, null).AppName);
+    }
+
+    [Fact]
+    public void sqlplusのcallで実行したバッチの補足はパスだけ()
+    {
+        var p = Sqlplus(Parent("cmd.exe", "cmd /c \"call D:\\Batch\\x.bat\""));
+        Assert.Equal(@"実行元: D:\Batch\x.bat（cmd.exe）", AppIdentifier.Identify(p, "sqlplus.exe", null, null).AppDetail);
+    }
+
     [Fact]
     public void sqlplusでも実行元が取れなければ実行ファイル名とフォルダ()
     {

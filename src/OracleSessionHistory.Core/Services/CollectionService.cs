@@ -135,10 +135,11 @@ public sealed class CollectionService(
         foreach (var source in linkSources)
         {
             var now = DateTime.Now;
+            IReadOnlyCollection<long> reassigned = [];
             try
             {
                 var found = await inspectors.Get(source.Provider).FindUsagesAsync(source, pidMap.Keys, ct);
-                await UpsertUsagesAsync(db, source, found.Usages, pidMap, now, ct);
+                reassigned = await UpsertUsagesAsync(db, source, found.Usages, pidMap, now, ct);
                 source.LastSuccessAt = now;
                 source.LastError = found.Warnings.Count > 0 ? "（警告）" + string.Join(" / ", found.Warnings) : null;
                 if (found.Warnings.Count > 0)
@@ -151,7 +152,7 @@ public sealed class CollectionService(
             }
             source.LastPollAt = now;
             await db.SaveChangesAsync(ct);
-            await RefreshLinkOriginsAsync(db, source, ct);
+            await RefreshLinkOriginsAsync(db, source, reassigned, ct);
         }
     }
 
@@ -159,14 +160,15 @@ public sealed class CollectionService(
     /// この接続元 DB の利用元が紐付いた、接続中の DB Link の可能性があるセッションに、接続元の端末・アプリを反映する。
     /// 失敗してもセッション収集・利用元の記録には影響させない。
     /// </summary>
-    private async Task RefreshLinkOriginsAsync(AppDbContext db, LinkSource source, CancellationToken ct)
+    /// <param name="reassigned">利用元の付け替えで、紐付けが外れた前のセッション</param>
+    private async Task RefreshLinkOriginsAsync(AppDbContext db, LinkSource source, IReadOnlyCollection<long> reassigned, CancellationToken ct)
     {
         try
         {
             var ids = await db.DbLinkUsages
                 .Where(u => u.LinkSourceId == source.Id && u.MatchedSessionId != null && u.MatchedSession!.IsConnected)
                 .Select(u => u.MatchedSessionId!.Value).Distinct().ToListAsync(ct);
-            await LinkOriginSync.RefreshAsync(db, ids, ct);
+            await LinkOriginSync.RefreshAsync(db, ids.Concat(reassigned).ToList(), ct);
         }
         catch (Exception ex) when (!ct.IsCancellationRequested)
         {
@@ -174,10 +176,12 @@ public sealed class CollectionService(
         }
     }
 
-    private static async Task UpsertUsagesAsync(AppDbContext db, LinkSource source, IReadOnlyList<ObservedLinkUsage> usages,
+    /// <returns>付け替えで紐付けが外れた前のセッション</returns>
+    private static async Task<IReadOnlyCollection<long>> UpsertUsagesAsync(AppDbContext db, LinkSource source, IReadOnlyList<ObservedLinkUsage> usages,
         Dictionary<string, long> pidMap, DateTime now, CancellationToken ct)
     {
-        if (usages.Count == 0) return;
+        var reassigned = new HashSet<long>();
+        if (usages.Count == 0) return reassigned;
 
         // 同じ接続元セッションがプロセス一致していれば、SQL 一致の行にも対応セッションを設定する
         var matchedBySession = usages
@@ -229,8 +233,12 @@ public sealed class CollectionService(
             row.LastSeenAt = now;
             row.HitCount++;
             if (matchedBySession.TryGetValue((u.InstId, u.Sid, u.Serial, u.LogonTime), out var sessionId))
+            {
+                if (row.MatchedSessionId is { } old && old != sessionId) reassigned.Add(old);
                 row.MatchedSessionId = sessionId;
+            }
         }
+        return reassigned;
     }
 
     /// <summary>保持期間を過ぎた履歴を削除する</summary>

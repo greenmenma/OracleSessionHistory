@@ -144,6 +144,77 @@ public sealed class CollectionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DBLink利用元が無くなったセッションは接続元のアプリを外す()
+    {
+        _source.Next = [Obs(1, "ORACLE.EXE", "3120:4410")];
+        await _service.PollSessionsAsync(_targetId, default);
+        int linkSourceId;
+        using (var db = _factory.CreateDbContext())
+        {
+            var l = new LinkSource { TargetId = _targetId, Name = "基幹DB", Provider = "Fake", ConnectionString = "y" };
+            db.LinkSources.Add(l);
+            await db.SaveChangesAsync();
+            linkSourceId = l.Id;
+        }
+        await _service.PollLinkSourcesAsync(_targetId, default);
+
+        using (var db = _factory.CreateDbContext())
+        {
+            // DB Link 接続元の削除（利用元は連鎖削除）・保持期間による削除の後
+            await db.LinkSources.Where(l => l.Id == linkSourceId).ExecuteDeleteAsync();
+            await LinkOriginSync.ClearOrphansAsync(db, default);
+        }
+
+        using var db2 = _factory.CreateDbContext();
+        var s = await db2.Sessions.SingleAsync();
+        Assert.Null(s.LinkOriginApp);
+        Assert.Null(s.LinkOriginMachine);
+    }
+
+    [Fact]
+    public async Task 保持期間で利用元だけ削除されたら接続元のアプリを外す()
+    {
+        _source.Next = [Obs(1, "ORACLE.EXE", "3120:4410")];
+        await _service.PollSessionsAsync(_targetId, default);
+        using (var db = _factory.CreateDbContext())
+        {
+            db.LinkSources.Add(new LinkSource { TargetId = _targetId, Name = "基幹DB", Provider = "Fake", ConnectionString = "y" });
+            await db.SaveChangesAsync();
+        }
+        await _service.PollLinkSourcesAsync(_targetId, default);
+        using (var db = _factory.CreateDbContext())
+            await db.DbLinkUsages.ExecuteUpdateAsync(x => x.SetProperty(u => u.LastSeenAt, DateTime.Now.AddDays(-200)));
+
+        using (var db = _factory.CreateDbContext())
+            await AppDbMaintenance.DeleteExpiredAsync(db, DateTime.Now.AddDays(-100), default);
+
+        using var db2 = _factory.CreateDbContext();
+        Assert.Null((await db2.Sessions.SingleAsync()).LinkOriginApp);
+    }
+
+    [Fact]
+    public async Task DBLink利用元の付け替えで前のセッションの接続元のアプリを外す()
+    {
+        _source.Next = [Obs(1, "ORACLE.EXE", "3120:4410"), Obs(2, "ORACLE.EXE", "3120:9999")];
+        await _service.PollSessionsAsync(_targetId, default);
+        using (var db = _factory.CreateDbContext())
+        {
+            db.LinkSources.Add(new LinkSource { TargetId = _targetId, Name = "基幹DB", Provider = "Fake", ConnectionString = "y" });
+            await db.SaveChangesAsync();
+        }
+        await _service.PollLinkSourcesAsync(_targetId, default);
+        // 同じ接続元セッションが、監視対象側の別のセッション（spid 9999）と一致するようになった
+        _inspector.ServerProcess = "9999";
+
+        await _service.PollLinkSourcesAsync(_targetId, default);
+
+        using var db2 = _factory.CreateDbContext();
+        var rows = await db2.Sessions.OrderBy(s => s.Sid).ToListAsync();
+        Assert.Null(rows[0].LinkOriginApp);
+        Assert.Equal("受注入力.exe", rows[1].LinkOriginApp);
+    }
+
+    [Fact]
     public async Task DBLink接続元のクライアントPIDと仮のアプリ名を記録する()
     {
         _source.Next = [Obs(1, "ORACLE.EXE", "3120:4410")];
@@ -240,6 +311,7 @@ public sealed class CollectionServiceTests : IDisposable
     private sealed class FakeInspector : IDbLinkInspector
     {
         public IReadOnlyCollection<string> LastProcessIds { get; private set; } = [];
+        public string ServerProcess { get; set; } = "4410";
         public string Provider => "Fake";
 
         public Task<IReadOnlyList<DbLinkInfo>> ListLinksAsync(string connectionString, CancellationToken ct) =>
@@ -254,7 +326,7 @@ public sealed class CollectionServiceTests : IDisposable
             {
                 DbLinkName = DbLinkMatchTypes.ProcessOnlyLinkName, MatchType = DbLinkMatchTypes.Process,
                 InstId = 1, Sid = 77, Serial = 7, LogonTime = new DateTime(2026, 11, 4, 8, 0, 0),
-                Machine = "KIKAN-AP01", Program = "受注入力.exe", Module = "受注", ServerProcess = "4410", ClientProcess = "5120:88",
+                Machine = "KIKAN-AP01", Program = "受注入力.exe", Module = "受注", ServerProcess = ServerProcess, ClientProcess = "5120:88",
             };
             List<ObservedLinkUsage> list = [u];
             if (source.SelectedLinks.Count > 0)

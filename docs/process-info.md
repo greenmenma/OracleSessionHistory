@@ -28,14 +28,25 @@
 
 ### パスワードを隠す
 
-コマンドライン（本体・実行元）は、保存する前に「ユーザ/パスワード」のパスワードを `********` にします（`ClientProcessRules.MaskCredentials`）。対象は、接続先（`@`）が続くもの（`scott/tiger@DB`）と、Oracle のツール（sqlplus・sqlldr・exp/imp・expdp/impdp・rman 等）とその実行元のコマンドライン中の `ユーザ/パスワード`（`userid=scott/tiger` やバッチの引数を含む）です。以前のバージョンで保存した Oracle のツールのコマンドラインは、移行時に消します。
+コマンドライン（本体・実行元）は、保存する前にパスワードを `********` にします（`ClientProcessRules.MaskCredentials`）。アプリ名は隠す前の値で決めます。隠す形は次のとおりです。
+
+- `ユーザ/パスワード` に接続先（`@`）が続くもの：`scott/tiger@DB`、`scott/"p@ss"@DB`、`jdbc:oracle:thin:scott/tiger@host:1521:orcl`
+- Oracle のツール（sqlplus・sqlldr・expdp/impdp・rman 等。exp/imp は `exp.exe` の形のみ）とその実行元のコマンドライン中の `ユーザ/パスワード`（`userid=scott/tiger`、バッチの引数）。ただし `ctl/x.ctl` のように拡張子の付いたファイルのパスらしい値は隠しません
+- `Password=xxx`・`PWD=xxx`（接続文字列）、`/pwd=xxx`、`--password xxx`、`-password=xxx`
+
+ユーザとパスワードを別々の引数で渡す形（`run.bat scott tiger`）は判別できないため隠しません。以前のバージョンで保存した Oracle のツールのコマンドラインは、移行時に消します。
+
+### 実行元の判定でできないこと
+
+- コマンドプロンプトで手で .bat を実行した場合、bat は同じ cmd.exe の中で動くため、実行元は `cmd.exe`（手で実行）になります。
+- 親プロセスの開始時刻が取れない場合は、PID の再利用（親が終了して別のプロセスが同じ PID を使った）を判定できません。
 
 ## 取得の流れ
 
 - Batch の `ProcessInfoCollector` が 10 秒ごと（`Collector:ProcessInfoSeconds`）に、次のセッションを端末ごとにまとめて問い合わせます。
   - 接続中の **クライアント** セッション（DB Link の可能性・Oracle 内部プロセス・このシステム自身の接続は対象外）
   - **DB Link 利用元**（DB Link 接続元 DB 上で DB Link を使っていたセッション）。接続元端末の `gv$session.process`（クライアント PID）でプロセスを調べます。最後に観測してから 10 分を過ぎたものは調べません（接続元セッションが終了し、PID が再利用されている可能性があるため。未取得・取得失敗のまま残っていたものは理由を付けて「対象外」にします）。利用元の PROGRAM が Oracle のプロセス（ジョブ `ORACLE.EXE (J000)`、さらに別の DB Link からの `ORACLE.EXE` 等）の場合は、端末が DB サーバー自身のため調べません
-- 特定した DB Link 利用元のアプリは、「DB Link 利用元」画面と、セッション履歴の `ORACLE.EXE` の行（「DB Link 経由: アプリ（端末）」）に表示します。接続アプリ表・サマリーのランキングでは、その `ORACLE.EXE` のセッションを接続元の端末・アプリとして数えます（`TrackedSession.LinkOriginMachine` / `LinkOriginApp`）。
+- 特定した DB Link 利用元のアプリは、「DB Link 利用元」画面と、セッション履歴の `ORACLE.EXE` の行（「DB Link 経由: アプリ（端末）」）に表示します。接続アプリ表・サマリーのランキングでは、その `ORACLE.EXE` のセッションを接続元の端末・アプリとして数えます（`TrackedSession.LinkOriginMachine` / `LinkOriginApp`）。接続元のアプリが未確定（プロセス情報の取得前・失敗）の間は、接続元の PROGRAM の値でまとめ、確定すると確定したアプリに移ります。DB Link 接続元の削除・保持期間による利用元の削除・利用元の付け替えの後は、接続元を外す（付け直す）ため、`ORACLE.EXE` の行に戻ります。
 - セッション収集とは別のループで動くため、問い合わせが遅い・失敗してもセッションの記録や切断の判定には影響しません。
 - 接続は WinRM（WS-Man）を先に試し、失敗したら DCOM を試します。端末名で名前解決できない場合は、設定の DNS サフィックスを付けて再試行します。
 - 接続できない端末は 1 分 → 5 分 → 15 分 → 60 分と間隔を空けて再試行します（ログは最初の失敗と回復時のみ）。

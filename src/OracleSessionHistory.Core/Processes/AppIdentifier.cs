@@ -24,11 +24,27 @@ public static partial class AppIdentifier
         ["wscript.exe"] = [".vbs", ".js", ".wsf"],
     };
 
-    [GeneratedRegex(@"(?:^|\s)/[ck](?:\s|""|$)", RegexOptions.IgnoreCase)]
+    // cmd /c はコマンドを実行して終わる（/k は実行後も対話で残るため、手で使っているシェルとみなす）
+    [GeneratedRegex(@"(?:^|\s)/c(?:\s|""|$)", RegexOptions.IgnoreCase)]
     private static partial Regex CmdCommandOption();
 
-    [GeneratedRegex(@"(?:^|\s)-(?:file|f|command|c|encodedcommand|ec|e)(?:\s|$)", RegexOptions.IgnoreCase)]
-    private static partial Regex PowerShellCommandOption();
+    // リダイレクト（> log.txt、2>> err.log、< in.txt）。出力先のファイルをスクリプトと誤らないよう除く
+    [GeneratedRegex(@"\d?>>?\s*(?:""[^""]*""|\S+)|<\s*(?:""[^""]*""|\S+)")]
+    private static partial Regex Redirection();
+
+    // パスらしい書き出し（D:\、\\server、.\）
+    [GeneratedRegex(@"^(?:[A-Za-z]:[\\/]|\\\\|\.{1,2}[\\/])")]
+    private static partial Regex RootedPath();
+
+    /// <summary>PowerShell の、コマンド・スクリプトを渡すオプション（前方一致の略記も受け付ける）</summary>
+    private static readonly string[] PowerShellCommandOptions = ["command", "file", "encodedcommand", "ec"];
+
+    /// <summary>PowerShell の、値を取るオプション（値を位置引数と誤らないよう読み飛ばす）</summary>
+    private static readonly HashSet<string> PowerShellValueOptions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "executionpolicy", "ep", "ex", "windowstyle", "w", "win", "version", "v", "configurationname", "config",
+        "inputformat", "if", "outputformat", "of", "o", "psconsolefile", "workingdirectory", "wd", "settingsfile",
+    };
 
     public const string Unknown = "(不明)";
     public const int MaxAppNameLength = 256;
@@ -115,19 +131,40 @@ public static partial class AppIdentifier
         return (ancestors[0].Name ?? Unknown, chain);
     }
 
-    private static bool RunsCommand(string shell, string? commandLine) =>
-        commandLine is not null && (shell.Equals("cmd.exe", StringComparison.OrdinalIgnoreCase)
-            ? CmdCommandOption().IsMatch(commandLine)
-            : PowerShellCommandOption().IsMatch(commandLine) || !shell.StartsWith("p", StringComparison.OrdinalIgnoreCase));
+    private static bool RunsCommand(string shell, string? commandLine)
+    {
+        if (commandLine is null) return false;
+        if (shell.Equals("cmd.exe", StringComparison.OrdinalIgnoreCase)) return CmdCommandOption().IsMatch(commandLine);
+        if (!shell.StartsWith("p", StringComparison.OrdinalIgnoreCase)) return true; // cscript / wscript は常にスクリプトを実行する
+
+        // PowerShell：-Command / -File / -EncodedCommand（略記を含む）か、オプション以外の引数（コマンドとして実行される）があれば実行
+        var args = SplitCommandLine(commandLine);
+        for (var i = 1; i < args.Count; i++)
+        {
+            var a = args[i];
+            if (!a.StartsWith('-') && !a.StartsWith('/')) return true;
+            var opt = a.TrimStart('-', '/');
+            if (opt.Length == 0) continue;
+            if (PowerShellValueOptions.Contains(opt)) { i++; continue; }
+            if (PowerShellCommandOptions.Any(o => o.StartsWith(opt, StringComparison.OrdinalIgnoreCase))) return true;
+        }
+        return false;
+    }
 
     /// <summary>コマンドラインから実行しているスクリプトのパスを取り出す（空白を含むパスはダブルクォートで囲まれている）</summary>
     private static string? ScriptOf(string? commandLine, string[] extensions)
     {
         if (string.IsNullOrWhiteSpace(commandLine)) return null;
+        var text = Redirection().Replace(commandLine, " ");
         var ext = string.Join("|", extensions.Select(e => Regex.Escape(e)));
-        // 1. ダブルクォートで囲まれたパス 2. 空白を含まないパス
-        var m = Regex.Match(commandLine, $@"""([^""]+?(?:{ext}))""", RegexOptions.IgnoreCase);
-        if (!m.Success) m = Regex.Match(commandLine, $@"(?:^|[\s=])([^\s""=]+?(?:{ext}))(?=[\s""]|$)", RegexOptions.IgnoreCase);
+        // 1. クォートで囲まれたパス（空白を含むものは D:\ 等で始まるパスだけ。"call D:\x.bat" のようなコマンドは除く）
+        foreach (Match q in Regex.Matches(text, $@"""([^""]+?(?:{ext}))""|'([^']+?(?:{ext}))'", RegexOptions.IgnoreCase))
+        {
+            var v = (q.Groups[1].Success ? q.Groups[1].Value : q.Groups[2].Value).Trim();
+            if (!v.Any(char.IsWhiteSpace) || RootedPath().IsMatch(v)) return v;
+        }
+        // 2. 空白を含まないパス
+        var m = Regex.Match(text, $@"(?:^|[\s=""'])([^\s""'=]+?(?:{ext}))(?=[\s""']|$)", RegexOptions.IgnoreCase);
         return m.Success ? m.Groups[1].Value.Trim() : null;
     }
 

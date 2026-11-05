@@ -162,7 +162,7 @@ public sealed class ProcessInfoService(
             }
         }
 
-        // 取得中に画面で設定（登録した実行ファイル・対象外端末）が保存された場合、古い設定での「対象外」は保存しない。
+        // 取得中に画面で設定（対象外端末）が保存された場合、古い設定での「対象外」は保存しない。
         // 保存時の再取得の登録（RequeueSkippedAsync）より後にこの回の結果を書くと、調べ直されなくなるため
         var updatedAt = await db.ProcessInspectionSettings.AsNoTracking()
             .Where(s => s.Id == ProcessInspectionSettings.SingletonId).Select(s => (DateTime?)s.UpdatedAt).SingleOrDefaultAsync(ct);
@@ -223,7 +223,7 @@ public sealed class ProcessInfoService(
     }
 
     /// <summary>
-    /// 設定（登録した実行ファイル・対象外端末）を変更したとき、対象外にしていた接続中のクライアントセッションと
+    /// 設定（対象外端末）を変更したとき、対象外にしていた接続中のクライアントセッションと
     /// 観測中の DB Link 利用元を未取得に戻して調べ直す。
     /// </summary>
     public static async Task<int> RequeueSkippedAsync(AppDbContext db, CancellationToken ct)
@@ -260,15 +260,15 @@ public sealed class ProcessInfoService(
 
         // 読んだ後に画面で有効にして保存（調べ直しの登録）された場合に取り消さないよう、更新の時点でも無効であることを条件にする
         const string disabled = "プロセス情報の取得が無効です";
-        var stillDisabled = db.ProcessInspectionSettings.Where(p => p.Id == ProcessInspectionSettings.SingletonId && p.Enabled);
+        var enabledNow = db.ProcessInspectionSettings.Where(p => p.Id == ProcessInspectionSettings.SingletonId && p.Enabled);
         await db.Sessions
-            .Where(s => s.IsConnected && s.ProcInfoState == ProcInfoStates.Pending && !stillDisabled.Any())
+            .Where(s => s.IsConnected && s.ProcInfoState == ProcInfoStates.Pending && !enabledNow.Any())
             .ExecuteUpdateAsync(x => x
                 .SetProperty(s => s.ProcInfoState, ProcInfoStates.NotApplicable)
                 .SetProperty(s => s.ProcInfoError, disabled)
                 .SetProperty(s => s.ProcInfoAt, now), ct);
         await db.DbLinkUsages
-            .Where(u => u.ProcInfoState == ProcInfoStates.Pending && !stillDisabled.Any())
+            .Where(u => u.ProcInfoState == ProcInfoStates.Pending && !enabledNow.Any())
             .ExecuteUpdateAsync(x => x
                 .SetProperty(u => u.ProcInfoState, ProcInfoStates.NotApplicable)
                 .SetProperty(u => u.ProcInfoError, disabled)
@@ -327,8 +327,12 @@ public sealed class ProcessInfoService(
     private static void Apply(IProcessInfoRecord row, ClientProcessInfo p, DateTime now)
     {
         SetState(row, ProcInfoStates.Resolved, null, now);
+        // アプリ名はパスワードを隠す前の値で決める（隠した値ではスクリプトのパス等が取れなくなることがある）
+        (row.AppName, row.AppDetail) = AppIdentifier.Identify(p, row.Program, row.Module, row.OsUser);
+        if (row.AppDetail is not null) row.AppDetail = ClientProcessRules.MaskCredentials(row.AppDetail, ClientProcessRules.IsOracleTool(p.Name));
+
         // コマンドラインに含まれるパスワード（sqlplus scott/tiger@db 等）は保存しない
-        var tool = ClientProcessRules.IsOracleTool(p.Name) || ClientProcessRules.IsOracleTool(p.CommandLine);
+        var tool = ClientProcessRules.IsOracleTool(p.Name);
         var masked = p with
         {
             CommandLine = ClientProcessRules.MaskCredentials(p.CommandLine),
@@ -345,6 +349,5 @@ public sealed class ProcessInfoService(
             : null;
         row.IisAppPool = masked.IisAppPool is { Length: > 256 } pool ? pool[..256] : masked.IisAppPool;
         row.IisSite = masked.IisSite;
-        (row.AppName, row.AppDetail) = AppIdentifier.Identify(masked, row.Program, row.Module, row.OsUser);
     }
 }

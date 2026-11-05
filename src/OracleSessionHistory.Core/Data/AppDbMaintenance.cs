@@ -19,6 +19,8 @@ public static class AppDbMaintenance
             .Where(u => u.MatchedSessionId != null && expired.Any(s => s.Id == u.MatchedSessionId))
             .ExecuteUpdateAsync(x => x.SetProperty(u => u.MatchedSessionId, (long?)null), ct);
         var sessions = await expired.ExecuteDeleteAsync(ct);
+        // 利用元だけが期限切れになった（長く接続している ORACLE.EXE の）セッションの接続元を外す
+        if (usages > 0) await LinkOriginSync.ClearOrphansAsync(db, ct);
         return usages + sessions;
     }
 

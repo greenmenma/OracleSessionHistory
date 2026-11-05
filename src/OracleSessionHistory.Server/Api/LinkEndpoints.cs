@@ -74,6 +74,8 @@ public static class LinkEndpoints
         g.MapDelete("/link-sources/{id:int}", async (int id, AppDbContext db) =>
         {
             var n = await db.LinkSources.Where(l => l.Id == id).ExecuteDeleteAsync();
+            // 利用元は連鎖削除されるため、それを接続元としていたセッションの接続元も外す
+            if (n > 0) await LinkOriginSync.ClearOrphansAsync(db, default);
             return n > 0 ? Results.NoContent() : Results.NotFound();
         });
 

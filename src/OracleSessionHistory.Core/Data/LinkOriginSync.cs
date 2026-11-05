@@ -27,4 +27,15 @@ public static class LinkOriginSync
         }
         return n;
     }
+
+    /// <summary>
+    /// 利用元が無くなったセッション（DB Link 接続元の削除・保持期間による利用元の削除の後）の接続元を外す。
+    /// 外さないと、接続アプリ表では接続元のアプリとして数え続けるのに、詳細・DB Link 利用元画面には出ず食い違う。
+    /// </summary>
+    public static Task<int> ClearOrphansAsync(AppDbContext db, CancellationToken ct) =>
+        db.Sessions
+            .Where(s => s.LinkOriginApp != null && !s.DbLinkOrigins.Any())
+            .ExecuteUpdateAsync(x => x
+                .SetProperty(s => s.LinkOriginMachine, (string?)null)
+                .SetProperty(s => s.LinkOriginApp, (string?)null), ct);
 }
