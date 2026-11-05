@@ -131,6 +131,29 @@ Server と **同じ** `ConnectionStrings:AppDb`・`AppDb:Provider` を設定し�
 | `RetentionDays` | 100 | 切断済み履歴の保持日数（接続数表で 2 ヶ月分使うため 70 以上推奨） |
 | `SeedDemoTarget` | false（デバッグ起動時は true） | 監視対象が無いときにデモ用を登録 |
 
+### ログ（エラーの記録）
+
+Batch・Server とも、Warning 以上のログ（取得失敗・DB Link 接続元のエラー・API の例外・起動失敗など）をファイルに残します。
+
+| 項目 | 内容 |
+|---|---|
+| 出力先 | アプリのフォルダの `logs`（例：`C:\apps\OracleSessionHistory.Server\logs\OracleSessionHistory.Server-20261105.log`） |
+| ファイル | 1 日 1 ファイル。`RetainedDays` 日分（既定 31）を超えた古いファイルは自動で削除 |
+
+設定は `appsettings.json` の `FileLog` セクションです。
+
+| 項目 | 既定値 | 内容 |
+|---|---|---|
+| `Path` | `logs` | 出力フォルダ。相対パスはアプリのフォルダ基準 |
+| `MinimumLevel` | `Warning` | 記録するレベル（`Information` にすると収集件数なども残る） |
+| `RetainedDays` | 31 | 保持するファイル数（日数） |
+| `Enabled` | true | false でファイル出力を止める |
+
+- **IIS の場合**：アプリケーションプールの ID（`IIS AppPool\<プール名>`）に、`logs` フォルダの「変更」権限を付与してください。権限が無いとログは出力されません（アプリは動作します）。
+- IIS で Server がまったく起動しない（HTTP 500.30 等）場合は、`web.config` の `stdoutLogEnabled` を `true` にすると、ASP.NET Core Module の起動ログが `.\logs\stdout` に出力されます。
+- Batch を Windows サービスで動かしている場合は、Warning 以上が Windows のイベントログ（アプリケーション）にも出力されます。
+- デバッグ時は Aspire ダッシュボードの各リソースのログでも確認できます。
+
 ### セキュリティ
 
 - 接続文字列は履歴 DB に平文で保存されます。履歴 DB ファイルのアクセス権を Batch / Server の実行ユーザに限定してください。

@@ -191,6 +191,12 @@ public static class AppDatabase
                 logger.LogWarning(ex, "アプリケーション DB の初期化に失敗しました。リトライします ({Attempt})", attempt);
                 await Task.Delay(TimeSpan.FromSeconds(1), ct);
             }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                // 起動できない原因をログファイルに残してから終了する
+                logger.LogCritical(ex, "アプリケーション DB を初期化できないため終了します");
+                throw;
+            }
         }
     }
 }

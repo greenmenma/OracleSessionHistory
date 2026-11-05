@@ -37,6 +37,10 @@ GRANT SELECT ON sys.dba_db_links TO monitor;   -- 無い場合は all_db_links�
 GRANT SELECT ON sys.dba_synonyms TO monitor;   -- 無い場合は all_synonyms
 ```
 
+- `gv$session` / `gv$process` が参照できない場合は、設定画面の DB Link 接続元の「エラー」欄に、不足しているビューと付与する `GRANT` 文が表示されます（利用元は記録されません）。
+- `gv$sqlarea` が参照できない場合は「（警告）」となり、SQL テキストでの検索だけを行いません（プロセス一致での特定は続けます）。
+- 監視対象 DB と同じユーザー名でも、接続元 DB は別の DB なので、接続元 DB 側でも権限の付与が必要です。
+
 ## 負荷について
 
 - 1 回のポーリングで実行する SQL は 8 本程度で、いずれも動的パフォーマンスビューの参照です。

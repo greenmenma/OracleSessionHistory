@@ -34,10 +34,24 @@ public sealed class OracleDbLinkInspector : IDbLinkInspector
         return [];
     }
 
-    public async Task<IReadOnlyList<ObservedLinkUsage>> FindUsagesAsync(LinkSource source, IReadOnlyCollection<string> processIds, CancellationToken ct)
+    /// <summary>利用元の特定に必須のビュー（参照できなければエラー）</summary>
+    private static readonly string[] RequiredViews = ["gv$session", "gv$process"];
+
+    /// <summary>SQL 一致に使うビュー（参照できなければ警告にとどめ、プロセス一致は続ける）</summary>
+    private const string SqlAreaView = "gv$sqlarea";
+
+    public async Task<DbLinkUsageResult> FindUsagesAsync(LinkSource source, IReadOnlyCollection<string> processIds, CancellationToken ct)
     {
         await using var conn = await OracleDb.OpenAsync(source.ConnectionString, ct);
         var result = new List<ObservedLinkUsage>();
+        var warnings = new List<string>();
+
+        // 権限不足（ORA-00942）のとき、どのビューが足りないか分かるように先に確認する
+        var missing = await MissingViewsAsync(conn, RequiredViews, ct);
+        if (missing.Count > 0)
+            throw new InvalidOperationException(
+                $"接続元 DB で {string.Join(", ", missing)} を参照できません（ORA-00942: 表またはビューが存在しません）。" +
+                $"接続ユーザーに権限を付与してください: {GrantHint(missing, conn)}");
 
         // ---- 1. プロセス ID 一致（監視対象側 gv$session.process = 接続元 gv$process.spid） ----
         if (processIds.Count > 0)
@@ -54,7 +68,13 @@ public sealed class OracleDbLinkInspector : IDbLinkInspector
             result.AddRange(await OracleDb.QueryAsync(conn, sql, r => Map(r, DbLinkMatchTypes.ProcessOnlyLinkName, DbLinkMatchTypes.Process), ct, 30, prms));
         }
 
-        if (source.SelectedLinks.Count == 0) return result;
+        if (source.SelectedLinks.Count == 0) return new DbLinkUsageResult(result, warnings);
+
+        if ((await MissingViewsAsync(conn, [SqlAreaView], ct)).Count > 0)
+        {
+            warnings.Add($"SQL 一致: {SqlAreaView} を参照できないため、SQL テキストでの検索を行いません（ORA-00942）。{GrantHint([SqlAreaView], conn)}");
+            return new DbLinkUsageResult(result, warnings);
+        }
 
         // ---- 2. SQL テキスト一致（@DBLINK またはそれを参照するシノニム） ----
         var synonyms = await LoadSynonymsAsync(conn, ct);
@@ -94,7 +114,33 @@ public sealed class OracleDbLinkInspector : IDbLinkInspector
             result.AddRange(rows.OfType<ObservedLinkUsage>());
         }
 
-        return result;
+        return new DbLinkUsageResult(result, warnings);
+    }
+
+    /// <summary>参照できない（ORA-00942）ビューを返す。行は読まないため負荷は無い</summary>
+    private static async Task<List<string>> MissingViewsAsync(OracleConnection conn, IEnumerable<string> views, CancellationToken ct)
+    {
+        var missing = new List<string>();
+        foreach (var view in views)
+        {
+            try
+            {
+                await OracleDb.QueryAsync(conn, $"select 1 from {view} where 1 = 0", _ => 0, ct);
+            }
+            catch (OracleException ex) when (ex.Number == 942)
+            {
+                missing.Add(view);
+            }
+        }
+        return missing;
+    }
+
+    /// <summary>付与が必要な GRANT 文（gv$xxx の実体は sys.gv_$xxx）</summary>
+    internal static string GrantHint(IEnumerable<string> views, OracleConnection conn)
+    {
+        var user = new OracleConnectionStringBuilder(conn.ConnectionString).UserID;
+        if (string.IsNullOrWhiteSpace(user)) user = "<接続ユーザー>";
+        return string.Join(" ", views.Select(v => $"GRANT SELECT ON sys.{v.Replace("v$", "v_$")} TO {user};"));
     }
 
     private static async Task<List<(string Name, string DbLink)>> LoadSynonymsAsync(OracleConnection conn, CancellationToken ct)

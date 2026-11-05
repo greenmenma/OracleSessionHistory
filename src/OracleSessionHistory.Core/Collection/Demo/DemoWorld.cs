@@ -209,8 +209,8 @@ public sealed class DemoDbLinkInspector(DemoWorld world) : IDbLinkInspector
 
     public Task<IReadOnlyList<DbLinkInfo>> ListLinksAsync(string connectionString, CancellationToken ct) => Task.FromResult(DemoWorld.Links);
 
-    public Task<IReadOnlyList<ObservedLinkUsage>> FindUsagesAsync(LinkSource source, IReadOnlyCollection<string> processIds, CancellationToken ct) =>
-        Task.FromResult(world.FindUsages(source, processIds));
+    public Task<DbLinkUsageResult> FindUsagesAsync(LinkSource source, IReadOnlyCollection<string> processIds, CancellationToken ct) =>
+        Task.FromResult(new DbLinkUsageResult(world.FindUsages(source, processIds), []));
 }
 
 /// <summary>デモ用の過去履歴（接続数表の確認用に約 2 ヶ月分）</summary>

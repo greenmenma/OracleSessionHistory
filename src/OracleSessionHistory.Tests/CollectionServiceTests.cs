@@ -110,6 +110,28 @@ public sealed class CollectionServiceTests : IDisposable
         Assert.All(usages, u => Assert.Equal(2, u.HitCount));
     }
 
+    [Fact]
+    public async Task DBLink接続元の警告は記録して検索結果は保存する()
+    {
+        _source.Next = [Obs(1, "ORACLE.EXE", "3120:4410")];
+        await _service.PollSessionsAsync(_targetId, default);
+        using (var db = _factory.CreateDbContext())
+        {
+            db.LinkSources.Add(new LinkSource { TargetId = _targetId, Name = "基幹DB", Provider = "Fake", ConnectionString = "y", SelectedLinks = ["PUBLIC.KOUKAI_LINK"] });
+            await db.SaveChangesAsync();
+        }
+        _inspector.Warnings.Add("SQL 一致: gv$sqlarea を参照できません");
+
+        await _service.PollLinkSourcesAsync(_targetId, default);
+
+        using var db2 = _factory.CreateDbContext();
+        var source = await db2.LinkSources.SingleAsync();
+        Assert.StartsWith("（警告）", source.LastError);
+        Assert.Contains("gv$sqlarea", source.LastError);
+        Assert.NotNull(source.LastSuccessAt);
+        Assert.Equal(2, await db2.DbLinkUsages.CountAsync());
+    }
+
     private sealed class TestDbFactory(DbContextOptions<AppDbContext> options) : IDbContextFactory<AppDbContext>
     {
         public AppDbContext CreateDbContext() => new(options);
@@ -143,7 +165,9 @@ public sealed class CollectionServiceTests : IDisposable
         public Task<IReadOnlyList<DbLinkInfo>> ListLinksAsync(string connectionString, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<DbLinkInfo>>([]);
 
-        public Task<IReadOnlyList<ObservedLinkUsage>> FindUsagesAsync(LinkSource source, IReadOnlyCollection<string> processIds, CancellationToken ct)
+        public List<string> Warnings { get; } = [];
+
+        public Task<DbLinkUsageResult> FindUsagesAsync(LinkSource source, IReadOnlyCollection<string> processIds, CancellationToken ct)
         {
             LastProcessIds = processIds.ToList();
             var u = new ObservedLinkUsage
@@ -152,11 +176,11 @@ public sealed class CollectionServiceTests : IDisposable
                 InstId = 1, Sid = 77, Serial = 7, LogonTime = new DateTime(2026, 11, 4, 8, 0, 0),
                 Machine = "KIKAN-AP01", Program = "受注入力.exe", ServerProcess = "4410",
             };
-            return Task.FromResult<IReadOnlyList<ObservedLinkUsage>>(
+            return Task.FromResult(new DbLinkUsageResult(
             [
                 u,
                 u with { DbLinkName = "PUBLIC.KOUKAI_LINK", MatchType = DbLinkMatchTypes.Sql, SqlText = "select * from T@KOUKAI_LINK" },
-            ]);
+            ], Warnings.ToList()));
         }
     }
 }

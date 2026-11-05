@@ -90,10 +90,12 @@ public sealed class CollectionService(
             var now = DateTime.Now;
             try
             {
-                var usages = await inspectors.Get(source.Provider).FindUsagesAsync(source, pidMap.Keys, ct);
-                await UpsertUsagesAsync(db, source, usages, pidMap, now, ct);
+                var found = await inspectors.Get(source.Provider).FindUsagesAsync(source, pidMap.Keys, ct);
+                await UpsertUsagesAsync(db, source, found.Usages, pidMap, now, ct);
                 source.LastSuccessAt = now;
-                source.LastError = null;
+                source.LastError = found.Warnings.Count > 0 ? "（警告）" + string.Join(" / ", found.Warnings) : null;
+                if (found.Warnings.Count > 0)
+                    logger.LogWarning("[{Source}] DB Link 接続元の一部の検索ができませんでした: {Warnings}", source.Name, string.Join(" / ", found.Warnings));
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {

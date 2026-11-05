@@ -40,6 +40,7 @@ cd src/OracleSessionHistory.Client && npm run typecheck && npm run build
 - 監視対象の種類を増やすときは `ISessionSource`（と必要なら `IDbLinkInspector`）を実装し、`CoreServiceCollectionExtensions` に登録する。`SourceProviders` に定数を追加する。
 - API は接続文字列のパスワードを返さない（`ConnectionStringMasker`）。エンティティをそのまま返す場合は `MonitorTarget` / `LinkSource` を含めないこと。
 - 監視対象の設定を変更したら `UpdatedAt` を更新する（Batch はこの値で再起動を判断する）。
+- エラーは `ILogger` で Warning 以上を出す（ファイル `logs/` に残る。ServiceDefaults の `AddFileLogging`）。例外を握りつぶす場合も必ずログに残す。
 - 日時はアプリ・DB ともにローカル時刻（`DateTime.Now`）で扱う。Oracle の `logon_time` は DB サーバーの時刻。
 - Windows でもデバッグできること。パスは `Path.Combine` を使い、OS 依存のコマンドを npm scripts に書かない。
 - 依存パッケージを追加する場合は脆弱性（`dotnet list package --vulnerable` / `npm audit`）を確認する。

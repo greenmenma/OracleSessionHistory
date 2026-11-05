@@ -31,6 +31,10 @@ public sealed record ObservedLinkUsage
     public string? SqlText { get; init; }
 }
 
+/// <summary>DB Link 利用元の検索結果</summary>
+/// <param name="Warnings">一部の検索ができなかった場合の警告（権限不足等）。検索結果は返す</param>
+public sealed record DbLinkUsageResult(IReadOnlyList<ObservedLinkUsage> Usages, IReadOnlyList<string> Warnings);
+
 /// <summary>
 /// DB Link の接続元 DB を調べる。
 /// ・DB Link 一覧の取得
@@ -45,7 +49,8 @@ public interface IDbLinkInspector
 
     /// <param name="source">接続元 DB の設定</param>
     /// <param name="processIds">監視対象側の DB Link 疑いセッションの gv$session.process（接続元の spid）</param>
-    Task<IReadOnlyList<ObservedLinkUsage>> FindUsagesAsync(LinkSource source, IReadOnlyCollection<string> processIds, CancellationToken ct);
+    /// <exception cref="Exception">接続できない・必須のビューを参照できない場合</exception>
+    Task<DbLinkUsageResult> FindUsagesAsync(LinkSource source, IReadOnlyCollection<string> processIds, CancellationToken ct);
 }
 
 public sealed class DbLinkInspectorFactory(IEnumerable<IDbLinkInspector> inspectors)
