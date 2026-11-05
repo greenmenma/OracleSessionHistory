@@ -99,7 +99,8 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
   }
 
   const set = (k: Exclude<keyof Filters, BoolKey>) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    setForm({ ...form, [k]: e.target.value })
+    // 接続アプリから開いた（完全一致の）状態で端末・アプリを書き換えたら、部分一致で探したいものとして完全一致を外す
+    setForm({ ...form, [k]: e.target.value, ...(k === 'machine' || k === 'app' ? { exact: false } : {}) })
 
   const search = (e: React.FormEvent) => {
     e.preventDefault()

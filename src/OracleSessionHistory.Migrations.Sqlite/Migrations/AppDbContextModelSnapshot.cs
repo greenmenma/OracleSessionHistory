@@ -84,6 +84,9 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
                     b.Property<string>("OsUser")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ProcAncestry")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ProcCommandLine")
                         .HasColumnType("TEXT");
 
@@ -292,9 +295,6 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
                     b.Property<string>("Password")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("TargetPrograms")
-                        .HasColumnType("TEXT");
-
                     b.Property<int>("TimeoutSeconds")
                         .HasColumnType("INTEGER");
 
@@ -394,6 +394,14 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
                     b.Property<string>("LastSqlText")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("LinkOriginApp")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LinkOriginMachine")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("LogonTime")
                         .HasColumnType("TEXT");
 
@@ -412,6 +420,9 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
 
                     b.Property<int?>("Port")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("ProcAncestry")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("ProcCommandLine")
                         .HasColumnType("TEXT");
@@ -495,6 +506,8 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
                     b.HasIndex("Program");
 
                     b.HasIndex("IsConnected", "ProcInfoState");
+
+                    b.HasIndex("LinkOriginMachine", "LinkOriginApp");
 
                     b.HasIndex("TargetId", "IsConnected");
 

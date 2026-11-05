@@ -27,6 +27,8 @@ public interface IProcessInfoRecord
     string? ProcOwner { get; set; }
     DateTime? ProcStartedAt { get; set; }
     string? ProcParentName { get; set; }
+    /// <summary>実行元（親から順に 1 行ずつ「名前: コマンドライン」。パスワードは隠す）</summary>
+    string? ProcAncestry { get; set; }
     string? IisAppPool { get; set; }
     string? IisSite { get; set; }
 }

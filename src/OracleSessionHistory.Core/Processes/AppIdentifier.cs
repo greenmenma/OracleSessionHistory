@@ -1,11 +1,51 @@
+using System.Text.RegularExpressions;
+
 namespace OracleSessionHistory.Core.Processes;
 
 /// <summary>
 /// 一覧・集計のキーにする「アプリ名」を決める（純粋関数）。
 /// プロセス情報が取れた場合はそれを優先し、取れない場合は gv$session の PROGRAM 等から決める。
 /// </summary>
-public static class AppIdentifier
+public static partial class AppIdentifier
 {
+    /// <summary>
+    /// 実行元（親プロセス）でアプリを区別するツール。バッチ・スクリプト・別のプログラムから起動されることが多く、
+    /// 実行ファイル名だけではどの処理か分からないもの。必要に応じて追加する（docs/process-info.md）。
+    /// </summary>
+    public static readonly IReadOnlySet<string> LaunchedTools = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "sqlplus.exe" };
+
+    /// <summary>スクリプトを実行するシェル（実行元をさらにさかのぼる対象）と、そのスクリプトの拡張子</summary>
+    private static readonly Dictionary<string, string[]> ScriptHosts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["cmd.exe"] = [".bat", ".cmd"],
+        ["powershell.exe"] = [".ps1"],
+        ["pwsh.exe"] = [".ps1"],
+        ["cscript.exe"] = [".vbs", ".js", ".wsf"],
+        ["wscript.exe"] = [".vbs", ".js", ".wsf"],
+    };
+
+    // cmd /c はコマンドを実行して終わる（/k は実行後も対話で残るため、手で使っているシェルとみなす）
+    [GeneratedRegex(@"(?:^|\s)/c(?:\s|""|$)", RegexOptions.IgnoreCase)]
+    private static partial Regex CmdCommandOption();
+
+    // リダイレクト（> log.txt、2>> err.log、< in.txt）。出力先のファイルをスクリプトと誤らないよう除く
+    [GeneratedRegex(@"\d?>>?\s*(?:""[^""]*""|\S+)|<\s*(?:""[^""]*""|\S+)")]
+    private static partial Regex Redirection();
+
+    // パスらしい書き出し（D:\、\\server、.\）
+    [GeneratedRegex(@"^(?:[A-Za-z]:[\\/]|\\\\|\.{1,2}[\\/])")]
+    private static partial Regex RootedPath();
+
+    /// <summary>PowerShell の、コマンド・スクリプトを渡すオプション（前方一致の略記も受け付ける）</summary>
+    private static readonly string[] PowerShellCommandOptions = ["command", "file", "encodedcommand", "ec"];
+
+    /// <summary>PowerShell の、値を取るオプション（値を位置引数と誤らないよう読み飛ばす）</summary>
+    private static readonly HashSet<string> PowerShellValueOptions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "executionpolicy", "ep", "ex", "windowstyle", "w", "win", "version", "v", "configurationname", "config",
+        "inputformat", "if", "outputformat", "of", "o", "psconsolefile", "workingdirectory", "wd", "settingsfile",
+    };
+
     public const string Unknown = "(不明)";
     public const int MaxAppNameLength = 256;
     private const string IisPrefix = "IIS: ";
@@ -44,6 +84,12 @@ public static class AppIdentifier
             if (pool is not null) return (IisPrefix + pool, p.IisSite ?? path);
         }
 
+        if (LaunchedTools.Contains(name) && p.Ancestors is { Count: > 0 } ancestors)
+        {
+            var (label, detail) = DescribeLauncher(ancestors);
+            return ($"{name}: {label}", "実行元: " + detail);
+        }
+
         var args = SplitCommandLine(p.CommandLine);
         if (name.Equals("dotnet.exe", StringComparison.OrdinalIgnoreCase))
         {
@@ -60,6 +106,66 @@ public static class AppIdentifier
         return path is not null
             ? (ClientProcessRules.FileNameOf(path), ClientProcessRules.DirectoryOf(path))
             : (name, null);
+    }
+
+    /// <summary>
+    /// 実行元を、アプリ名に付ける短い名前（スクリプトのファイル名・起動したプログラム名）と補足（スクリプトのパスと親のつながり）にする。
+    /// ・シェルがスクリプトを実行していれば、そのスクリプト
+    /// ・コマンドを渡されただけのシェル（cmd /c sqlplus …）は、さらに親をさかのぼる
+    /// ・対話のシェル（コマンドプロンプトで手で実行）はシェルの名前
+    /// ・それ以外のプログラム（ジョブ管理・Java 等）はその名前
+    /// </summary>
+    internal static (string Label, string Detail) DescribeLauncher(IReadOnlyList<ParentProcessInfo> ancestors)
+    {
+        var chain = string.Join(" ← ", ancestors.Select(a => a.Name ?? "?"));
+        foreach (var a in ancestors)
+        {
+            var name = a.Name?.Trim();
+            if (string.IsNullOrEmpty(name)) break;
+            if (!ScriptHosts.TryGetValue(name, out var extensions)) return (name, chain);
+            if (ScriptOf(a.CommandLine, extensions) is { } script)
+                return (ClientProcessRules.FileNameOf(script), $"{script}（{chain}）");
+            // コマンドラインが取れない・コマンドを渡されていないシェルは、人が対話で実行したもの
+            if (!RunsCommand(name, a.CommandLine)) return (name, chain);
+        }
+        return (ancestors[0].Name ?? Unknown, chain);
+    }
+
+    private static bool RunsCommand(string shell, string? commandLine)
+    {
+        if (commandLine is null) return false;
+        if (shell.Equals("cmd.exe", StringComparison.OrdinalIgnoreCase)) return CmdCommandOption().IsMatch(commandLine);
+        if (!shell.StartsWith("p", StringComparison.OrdinalIgnoreCase)) return true; // cscript / wscript は常にスクリプトを実行する
+
+        // PowerShell：-Command / -File / -EncodedCommand（略記を含む）か、オプション以外の引数（コマンドとして実行される）があれば実行
+        var args = SplitCommandLine(commandLine);
+        for (var i = 1; i < args.Count; i++)
+        {
+            var a = args[i];
+            if (!a.StartsWith('-') && !a.StartsWith('/')) return true;
+            var opt = a.TrimStart('-', '/');
+            if (opt.Length == 0) continue;
+            if (PowerShellValueOptions.Contains(opt)) { i++; continue; }
+            if (PowerShellCommandOptions.Any(o => o.StartsWith(opt, StringComparison.OrdinalIgnoreCase))) return true;
+        }
+        return false;
+    }
+
+    /// <summary>コマンドラインから実行しているスクリプトのパスを取り出す（空白を含むパスはダブルクォートで囲まれている）</summary>
+    private static string? ScriptOf(string? commandLine, string[] extensions)
+    {
+        if (string.IsNullOrWhiteSpace(commandLine)) return null;
+        var text = Redirection().Replace(commandLine, " ");
+        var ext = string.Join("|", extensions.Select(e => Regex.Escape(e)));
+        // 1. クォートで囲まれたパス（空白を含むものは D:\ 等で始まるパスだけ。"call D:\x.bat" のようなコマンドは除く）
+        foreach (Match q in Regex.Matches(text, $@"""([^""]+?(?:{ext}))""|'([^']+?(?:{ext}))'", RegexOptions.IgnoreCase))
+        {
+            var v = (q.Groups[1].Success ? q.Groups[1].Value : q.Groups[2].Value).Trim();
+            if (!v.Any(char.IsWhiteSpace) || RootedPath().IsMatch(v)) return v;
+        }
+        // 2. 空白を含まないパス
+        var m = Regex.Match(text, $@"(?:^|[\s=""'])([^\s""'=]+?(?:{ext}))(?=[\s""']|$)", RegexOptions.IgnoreCase);
+        return m.Success ? m.Groups[1].Value.Trim() : null;
     }
 
     private static bool IsW3wp(string name) => name.Equals("w3wp.exe", StringComparison.OrdinalIgnoreCase);

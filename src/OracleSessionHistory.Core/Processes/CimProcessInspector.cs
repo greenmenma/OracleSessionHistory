@@ -20,6 +20,8 @@ public sealed class CimProcessInspector(ILogger<CimProcessInspector> logger) : I
     private const string WebAdministration = @"root\WebAdministration";
     /// <summary>1 回の WQL に含める PID の数</summary>
     private const int PidChunk = 50;
+    /// <summary>実行元をさかのぼる段数（sqlplus.exe ← cmd.exe ← ジョブ管理 等）</summary>
+    private const int MaxAncestorDepth = 3;
     // GetOwner はインスタンスのキー（Handle）が必要なため SELECT に含める
     private static readonly TimeSpan IisCacheDuration = TimeSpan.FromHours(1);
 
@@ -79,11 +81,29 @@ public sealed class CimProcessInspector(ILogger<CimProcessInspector> logger) : I
                 }
             }
 
-            var parentNames = QueryNames(session, op, parents.Values.Distinct().ToList());
-            return rows.Select(r => r with
+            // 親プロセス（実行元）。sqlplus.exe 等は、バッチ・起動したプログラムが分かるまでさらにさかのぼる
+            var known = new Dictionary<int, (ParentProcessInfo Info, int? ParentId)>();
+            var next = parents.Values.Distinct().ToList();
+            for (var depth = 1; depth <= MaxAncestorDepth && next.Count > 0; depth++)
             {
-                ParentName = parents.TryGetValue(r.ProcessId, out var pp) && parentNames.TryGetValue(pp, out var pn) ? pn : null,
-                IisSite = r.IisAppPool is { } pool ? GetIisSite(session, op, target, pool) : null,
+                foreach (var (pid, info) in QueryParents(session, op, next.Where(p => !known.ContainsKey(p)).ToList())) known[pid] = info;
+                if (depth == MaxAncestorDepth) break;
+                // 2 段目以降は、実行元でアプリを区別するツールのものだけ
+                next = rows.Where(r => AppIdentifier.LaunchedTools.Contains(r.Name ?? ""))
+                    .SelectMany(r => ChainOf(r, parents, known).Select(a => a.ProcessId))
+                    .Select(p => known.TryGetValue(p, out var k) ? k.ParentId : null)
+                    .OfType<int>().Where(p => !known.ContainsKey(p)).Distinct().ToList();
+            }
+
+            return rows.Select(r =>
+            {
+                var chain = ChainOf(r, parents, known);
+                return r with
+                {
+                    ParentName = chain.FirstOrDefault()?.Name,
+                    Ancestors = chain,
+                    IisSite = r.IisAppPool is { } pool ? GetIisSite(session, op, target, pool) : null,
+                };
             }).ToList();
         });
         return result;
@@ -196,17 +216,44 @@ public sealed class CimProcessInspector(ILogger<CimProcessInspector> logger) : I
         }
     }
 
-    [SupportedOSPlatform("windows")]
-    private static Dictionary<int, string> QueryNames(CimSession session, CimOperationOptions op, IReadOnlyCollection<int> pids)
+    /// <summary>
+    /// 親から順にたどった実行元。親の方が後から開始している場合は、親が終了して PID が別のプロセスに再利用されているため、そこで止める。
+    /// </summary>
+    internal static List<ParentProcessInfo> ChainOf(ClientProcessInfo process, IReadOnlyDictionary<int, int> parents,
+        IReadOnlyDictionary<int, (ParentProcessInfo Info, int? ParentId)> known)
     {
-        var map = new Dictionary<int, string>();
-        foreach (var chunk in pids.Chunk(PidChunk))
+        var chain = new List<ParentProcessInfo>();
+        var childStarted = process.StartedAt;
+        int? id = parents.TryGetValue(process.ProcessId, out var p) ? p : null;
+        var visited = new HashSet<int> { process.ProcessId };
+        while (id is { } pid && pid > 0 && visited.Add(pid) && known.TryGetValue(pid, out var k) && chain.Count < MaxAncestorDepth)
         {
-            var wql = "SELECT ProcessId, Name FROM Win32_Process WHERE "
+            if (childStarted is { } cs && k.Info.StartedAt is { } ps && ps > cs) break;
+            chain.Add(k.Info);
+            childStarted = k.Info.StartedAt;
+            id = k.ParentId;
+        }
+        return chain;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static Dictionary<int, (ParentProcessInfo Info, int? ParentId)> QueryParents(CimSession session, CimOperationOptions op,
+        IReadOnlyCollection<int> pids)
+    {
+        var map = new Dictionary<int, (ParentProcessInfo, int?)>();
+        foreach (var chunk in pids.Where(p => p > 0).Chunk(PidChunk))
+        {
+            var wql = "SELECT ProcessId, ParentProcessId, Name, CommandLine, CreationDate FROM Win32_Process WHERE "
                       + string.Join(" OR ", chunk.Select(p => "ProcessId = " + p.ToString(CultureInfo.InvariantCulture)));
             foreach (var inst in session.QueryInstances(CimV2, "WQL", wql, op))
+            {
                 using (inst)
-                    if (ToInt(inst, "ProcessId") is { } pid && Str(inst, "Name") is { } name) map[pid] = name;
+                {
+                    if (ToInt(inst, "ProcessId") is not { } pid) continue;
+                    map[pid] = (new ParentProcessInfo(pid, Str(inst, "Name"), Str(inst, "CommandLine"),
+                        ToLocalTime(inst.CimInstanceProperties["CreationDate"]?.Value)), ToInt(inst, "ParentProcessId"));
+                }
+            }
         }
         return map;
     }

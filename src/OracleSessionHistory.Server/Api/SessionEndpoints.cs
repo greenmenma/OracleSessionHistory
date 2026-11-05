@@ -33,8 +33,7 @@ public static class SessionEndpoints
             x.DisconnectedAt, x.DisconnectUncertain, x.DbLinkOrigins.Count,
             x.AppName, x.AppDetail, x.ProcOwner, x.ProcInfoState, x.ProcInfoError,
             // DB Link の可能性があるセッションは、特定できた接続元（最後に観測したもの）のアプリを一覧に出す
-            x.DbLinkOrigins.OrderByDescending(u => u.LastSeenAt).Select(u => u.AppName).FirstOrDefault(),
-            x.DbLinkOrigins.OrderByDescending(u => u.LastSeenAt).Select(u => u.Machine).FirstOrDefault()));
+            x.LinkOriginApp, x.LinkOriginMachine));
 
     public static void MapSessionEndpoints(this IEndpointRouteBuilder app)
     {
@@ -105,15 +104,30 @@ public static class SessionEndpoints
                 EF.Functions.Like(x.ClientInfo, p, "\\") || EF.Functions.Like(x.JobName, p, "\\") ||
                 EF.Functions.Like(x.LastSqlText, p, "\\") || EF.Functions.Like(x.AppName, p, "\\") ||
                 EF.Functions.Like(x.AppDetail, p, "\\") || EF.Functions.Like(x.ProcPath, p, "\\") ||
-                EF.Functions.Like(x.ProcCommandLine, p, "\\") || EF.Functions.Like(x.ProcOwner, p, "\\"));
+                EF.Functions.Like(x.ProcCommandLine, p, "\\") || EF.Functions.Like(x.ProcOwner, p, "\\") ||
+                EF.Functions.Like(x.ProcAncestry, p, "\\") ||
+                EF.Functions.Like(x.LinkOriginMachine, p, "\\") || EF.Functions.Like(x.LinkOriginApp, p, "\\"));
         }
+        // 端末・アプリは、DB Link 経由で接続元を特定できた行（LinkOriginApp あり）は接続元の端末・アプリで探す（接続アプリ表と同じまとめ方）
         if (!string.IsNullOrWhiteSpace(s.Machine))
         {
             var m = s.Machine.Trim();
-            // 完全一致：接続アプリ表から遷移した場合（部分一致だと WEB01 で WEB011 も出てしまう）
-            q = !s.Exact ? q.Where(x => EF.Functions.Like(x.Machine, QueryHelpers.Contains(m), "\\"))
-                : m == UnknownMachine ? q.Where(x => x.Machine == null || x.Machine == "")
-                : q.Where(x => x.Machine == m);
+            // 完全一致：接続アプリ表から遷移した場合（部分一致だと WEB01 で WEB011 も出てしまう）。
+            // 端末名は保存時に前後の空白を除いているため、インデックスを使えるようそのまま比べる
+            if (!s.Exact)
+            {
+                var p = QueryHelpers.Contains(m);
+                q = q.Where(x => EF.Functions.Like(x.Machine, p, "\\") || EF.Functions.Like(x.LinkOriginMachine, p, "\\"));
+            }
+            else if (m == UnknownMachine)
+            {
+                q = q.Where(x => (x.LinkOriginApp == null && (x.Machine == null || x.Machine == ""))
+                                 || (x.LinkOriginApp != null && (x.LinkOriginMachine == null || x.LinkOriginMachine == "")));
+            }
+            else
+            {
+                q = q.Where(x => (x.LinkOriginApp == null && x.Machine == m) || (x.LinkOriginApp != null && x.LinkOriginMachine == m));
+            }
         }
         if (!string.IsNullOrWhiteSpace(s.Program)) q = q.Where(x => EF.Functions.Like(x.Program, QueryHelpers.Contains(s.Program.Trim()), "\\"));
         if (!string.IsNullOrWhiteSpace(s.Username)) q = q.Where(x => EF.Functions.Like(x.Username, QueryHelpers.Contains(s.Username.Trim()), "\\"));
@@ -125,7 +139,9 @@ public static class SessionEndpoints
         if (!string.IsNullOrWhiteSpace(s.App))
         {
             var app = s.App.Trim();
-            q = s.Exact ? q.Where(x => x.AppName == app) : q.Where(x => EF.Functions.Like(x.AppName, QueryHelpers.Contains(app), "\\"));
+            var p = QueryHelpers.Contains(app);
+            q = s.Exact ? q.Where(x => (x.LinkOriginApp == null && x.AppName == app) || x.LinkOriginApp == app)
+                : q.Where(x => EF.Functions.Like(x.AppName, p, "\\") || EF.Functions.Like(x.LinkOriginApp, p, "\\"));
         }
         // Oracle 内部プロセス（ジョブ・パラレル実行等）は既定で表示しない。種別を明示した場合はそれに従う
         if (!string.IsNullOrWhiteSpace(s.Kind)) q = q.Where(x => x.ProcessKind == s.Kind);

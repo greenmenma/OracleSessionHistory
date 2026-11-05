@@ -53,15 +53,48 @@ public static partial class ClientProcessRules
     /// <summary>ホスト名が対象外端末パターン（カンマ区切り、* はワイルドカード、大文字小文字無視）に一致するか</summary>
     public static bool IsExcluded(string host, string? patterns) => MatchesAny(host, patterns);
 
+    // ユーザ/パスワード（ユーザ・パスワードはダブルクォートで囲まれていてもよい）。jdbc:oracle:thin:scott/tiger@… の「:」の後も対象
+    [GeneratedRegex(@"(?<=^|[\s""'=:])([A-Za-z0-9_$#.\-]+|""[^""\s]+"")/(""[^""]*""|[^\s""'/@]+)", RegexOptions.CultureInvariant)]
+    private static partial Regex UserPassword();
+
+    // Password=xxx / PWD=xxx（接続文字列）、/pwd=xxx、--password xxx、-password=xxx
+    [GeneratedRegex(@"(?<=^|[\s""';/\-])(password|pwd|passwd)(\s*=\s*|\s+)(""[^""]*""|[^;\s""]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex PasswordOption();
+
+    // Oracle のツールの実行ファイル（exp / imp は一般的な単語と区別するため .exe 付きのみ）
+    [GeneratedRegex(@"(?:^|[\s""\\/])(?:(?:sqlplus|sqlldr|expdp|impdp|rman|dgmgrl|tkprof)(?:\.exe)?|(?:exp|imp)\.exe)(?=[\s""]|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex OracleTool();
+
+    // ファイルのパスらしい値（ctl/x.ctl、data/in.csv）。ツールの引数でも、接続先（@）が続かなければパスワードとみなさない
+    [GeneratedRegex(@"\.[A-Za-z0-9]{1,5}$", RegexOptions.CultureInvariant)]
+    private static partial Regex FileExtension();
+
+    public const string PasswordMask = "********";
+
+    /// <summary>Oracle のツール（sqlplus 等）の実行ファイル名・コマンドラインか</summary>
+    public static bool IsOracleTool(string? value) => !string.IsNullOrEmpty(value) && OracleTool().IsMatch(" " + value);
+
     /// <summary>
-    /// PROGRAM がプロセス情報を取得する実行ファイルのパターン（カンマ区切り、* はワイルドカード、大文字小文字無視）に一致するか。
-    /// PROGRAM がパス付きの場合はファイル名でも比較する。パターンが空なら一致しない。
+    /// コマンドラインのパスワードを隠す（保存・表示する前に必ず通す）。次の形を隠す。
+    /// ・ユーザ/パスワード：接続先（@）が続くもの（scott/tiger@db、jdbc:oracle:thin:scott/tiger@host）、
+    ///   または Oracle のツール（sqlplus 等）とその実行元のコマンドライン中のもの（ファイルのパスらしい値は除く）
+    /// ・Password=xxx / PWD=xxx / --password xxx 等のオプション
+    /// ユーザとパスワードを別々の引数で渡す形（run.bat scott tiger）は判別できないため隠さない。
     /// </summary>
-    public static bool IsTargetProgram(string? program, string? patterns)
+    /// <param name="oracleTool">Oracle のツールを起動した親プロセスのコマンドライン（バッチの引数に渡す場合など）</param>
+    public static string? MaskCredentials(string? commandLine, bool oracleTool = false)
     {
-        if (string.IsNullOrWhiteSpace(program)) return false;
-        var prog = program.Trim();
-        return MatchesAny(prog, patterns) || MatchesAny(FileNameOf(prog), patterns);
+        if (string.IsNullOrEmpty(commandLine)) return commandLine;
+        var tool = oracleTool || IsOracleTool(commandLine);
+        var masked = UserPassword().Replace(commandLine, m =>
+        {
+            var end = m.Index + m.Length;
+            var hasConnect = end < commandLine.Length && commandLine[end] == '@';
+            var tokenEnds = end >= commandLine.Length || hasConnect || char.IsWhiteSpace(commandLine[end]) || commandLine[end] is '"' or '\'';
+            var looksLikePath = FileExtension().IsMatch(m.Groups[2].Value);
+            return tokenEnds && (hasConnect || (tool && !looksLikePath)) ? m.Groups[1].Value + "/" + PasswordMask : m.Value;
+        });
+        return PasswordOption().Replace(masked, m => m.Groups[1].Value + m.Groups[2].Value + PasswordMask);
     }
 
     private static bool MatchesAny(string value, string? patterns)

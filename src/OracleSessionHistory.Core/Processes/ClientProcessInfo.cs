@@ -12,6 +12,7 @@ namespace OracleSessionHistory.Core.Processes;
 /// <param name="ParentName">親プロセス名</param>
 /// <param name="IisAppPool">IIS アプリケーションプール名（w3wp.exe のみ）</param>
 /// <param name="IisSite">IIS のサイト名・アプリのパス（例：Default Web Site/foo。複数はカンマ区切り）</param>
+/// <param name="Ancestors">親プロセスから順にさかのぼった実行元（取得できた分だけ。sqlplus.exe 等の実行元の特定に使う）</param>
 public sealed record ClientProcessInfo(
     int ProcessId,
     string? Name,
@@ -21,4 +22,8 @@ public sealed record ClientProcessInfo(
     DateTime? StartedAt,
     string? ParentName,
     string? IisAppPool,
-    string? IisSite);
+    string? IisSite,
+    IReadOnlyList<ParentProcessInfo>? Ancestors = null);
+
+/// <summary>実行元（親・その親…）のプロセス</summary>
+public sealed record ParentProcessInfo(int ProcessId, string? Name, string? CommandLine, DateTime? StartedAt);

@@ -201,9 +201,7 @@ public static class AppDatabase
                     {
                         db.ProcessInspectionSettings.Add(new ProcessInspectionSettings
                         {
-                            Id = ProcessInspectionSettings.SingletonId, Enabled = true, ExcludeMachines = "GUEST-*",
-                            // 会計システム.exe・sqlplus.exe は未登録（調べない例）
-                            TargetPrograms = "w3wp.exe, 販売管理.exe, JP1Batch.exe, SQL Developer", UpdatedAt = now,
+                            Id = ProcessInspectionSettings.SingletonId, Enabled = true, ExcludeMachines = "GUEST-*", UpdatedAt = now,
                         });
                         await db.SaveChangesAsync(ct);
                     }

@@ -64,20 +64,37 @@ public class ClientProcessRulesTests
     }
 
     [Theory]
-    [InlineData("w3wp.exe", "w3wp.exe, dotnet.exe", true)]
-    [InlineData("W3WP.EXE", "w3wp.exe", true)]
-    [InlineData(@"C:\Apps\Foo.exe", "foo.exe", true)]
-    [InlineData("JDBC Thin Client", "JDBC Thin Client", true)]
-    [InlineData("販売管理.exe", "販売*", true)]
-    [InlineData(" w3wp.exe ", "w3wp.exe", true)]
-    [InlineData("sqlplus.exe", "w3wp.exe", false)]
-    [InlineData("sqlplus.exe", null, false)]
-    [InlineData("sqlplus.exe", " , ", false)]
-    [InlineData(null, "*", false)]
-    [InlineData("  ", "*", false)]
-    public void IsTargetProgramは登録した実行ファイルだけ(string? program, string? patterns, bool expected)
+    [InlineData("sqlplus.exe scott/tiger@KOUKAI @D:\\sql\\x.sql", "sqlplus.exe scott/********@KOUKAI @D:\\sql\\x.sql")]
+    [InlineData("sqlplus -s scott/tiger", "sqlplus -s scott/********")]
+    [InlineData("sqlldr userid=scott/tiger@db control=x.ctl", "sqlldr userid=scott/********@db control=x.ctl")]
+    [InlineData("cmd /c \"sqlplus scott/tiger@db @a.sql\"", "cmd /c \"sqlplus scott/********@db @a.sql\"")]
+    [InlineData("C:\\app\\Foo.exe scott/tiger@db", "C:\\app\\Foo.exe scott/********@db")]
+    [InlineData("sqlplus /nolog", "sqlplus /nolog")]
+    [InlineData("sqlplus / as sysdba", "sqlplus / as sysdba")]
+    [InlineData("dotnet bin/app.dll", "dotnet bin/app.dll")]
+    [InlineData("java -jar http://host/x.jar", "java -jar http://host/x.jar")]
+    [InlineData("sqlplus scott/\"p@ss w\"@db", "sqlplus scott/********@db")]
+    [InlineData("sqlplus \"scott\"/tiger@db", "sqlplus \"scott\"/********@db")]
+    [InlineData("java -Durl=jdbc:oracle:thin:scott/tiger@host:1521:orcl -jar a.jar", "java -Durl=jdbc:oracle:thin:scott/********@host:1521:orcl -jar a.jar")]
+    [InlineData("app.exe \"User Id=scott;Password=tiger;Data Source=db\"", "app.exe \"User Id=scott;Password=********;Data Source=db\"")]
+    [InlineData("app.exe /pwd=tiger", "app.exe /pwd=********")]
+    [InlineData("app.exe --password tiger --user scott", "app.exe --password ******** --user scott")]
+    [InlineData("app.exe -password=tiger", "app.exe -password=********")]
+    // 隠しすぎない（ファイルのパス・exp という単語）
+    [InlineData("sqlldr userid=scott/tiger control=ctl/x.ctl data=data/in.csv", "sqlldr userid=scott/******** control=ctl/x.ctl data=data/in.csv")]
+    [InlineData("dotnet bin/app.dll --mode exp", "dotnet bin/app.dll --mode exp")]
+    [InlineData(null, null)]
+    public void MaskCredentialsはユーザとパスワードのパスワードを隠す(string? commandLine, string? expected)
     {
-        Assert.Equal(expected, ClientProcessRules.IsTargetProgram(program, patterns));
+        Assert.Equal(expected, ClientProcessRules.MaskCredentials(commandLine));
+    }
+
+    [Fact]
+    public void Oracleのツールを起動した親プロセスは接続先が無くてもパスワードを隠す()
+    {
+        // バッチに引数で渡す場合（cmd.exe /c x.bat scott/tiger）
+        Assert.Equal(@"cmd.exe /c D:\x.bat scott/********", ClientProcessRules.MaskCredentials(@"cmd.exe /c D:\x.bat scott/tiger", oracleTool: true));
+        Assert.Equal(@"cmd.exe /c D:\x.bat bin/x", ClientProcessRules.MaskCredentials(@"cmd.exe /c D:\x.bat bin/x"));
     }
 
     private static readonly DateTime Logon = new(2026, 11, 5, 9, 0, 0);

@@ -78,6 +78,15 @@ public class TrackedSession : IProcessInfoRecord
     public string? ProcOwner { get; set; }
     public DateTime? ProcStartedAt { get; set; }
     public string? ProcParentName { get; set; }
+    /// <summary>実行元（親から順に 1 行ずつ「名前: コマンドライン」。パスワードは隠す）</summary>
+    public string? ProcAncestry { get; set; }
+
+    /// <summary>
+    /// DB Link の可能性があるセッションで、接続元 DB 上で特定した利用元の端末・アプリ（最後に観測したもの。<c>LinkOriginSync</c> が更新）。
+    /// 接続アプリ表・ランキング・完全一致の検索は、この値がある行を接続元の端末・アプリとして扱う。
+    /// </summary>
+    public string? LinkOriginMachine { get; set; }
+    public string? LinkOriginApp { get; set; }
     public string? IisAppPool { get; set; }
     public string? IisSite { get; set; }
 
