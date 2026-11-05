@@ -193,3 +193,17 @@ pre.sql.small { font-size: 11px; padding: 6px; }
   .props { grid-template-columns: 1fr; }
   .modal .row { grid-template-columns: 1fr; }
 }
+
+/* 接続アプリ（アプリ名＋補足の 2 行表示） */
+.app-cell { min-width: 160px; max-width: 360px; }
+.app-name { font-weight: 600; display: flex; align-items: center; gap: 4px; }
+.app-name > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-detail { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub { color: var(--muted); font-size: 11px; }
+
+/* 画面内のフォーム（設定のプロセス情報など） */
+.stack-form { display: flex; flex-direction: column; gap: 10px; max-width: 900px; }
+.stack-form > label:not(.check), .stack-form .row label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.stack-form .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.stack-form input:not([type='checkbox']) { color: var(--text); }
+@media (max-width: 720px) { .stack-form .row { grid-template-columns: 1fr; } }

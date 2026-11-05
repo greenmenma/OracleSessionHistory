@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { api, type DbLinkInfo, type LinkSource, type LinkSourceInput, type Target, type TargetInput } from '../api'
 import { useAsync } from '../hooks'
 import { fmtDateTime } from '../format'
+import ProcessSettingsSection from '../components/ProcessSettingsSection'
 
 const ORACLE_SAMPLE =
   'User Id=MONITOR;Password=xxxx;Data Source=(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=dbhost)(PORT=1521))(CONNECT_DATA=(SERVICE_NAME=KOUKAI)))'
@@ -99,6 +100,8 @@ export default function SettingsPage({ onChanged }: { onChanged: () => void }) {
           </table>
         </div>
       </section>
+
+      <ProcessSettingsSection />
 
       {linkTarget && <LinkSourcesSection target={linkTarget} providers={providers ?? ['Oracle']} onClose={() => setLinkTarget(undefined)} />}
 

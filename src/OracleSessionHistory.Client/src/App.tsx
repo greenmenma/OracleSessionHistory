@@ -10,7 +10,7 @@ import SettingsPage from './pages/SettingsPage'
 const menus = [
   { path: '/', label: 'サマリー' },
   { path: '/sessions', label: 'セッション履歴' },
-  { path: '/counts', label: '接続数表' },
+  { path: '/counts', label: '接続アプリ' },
   { path: '/dblinks', label: 'DB Link利用元' },
   { path: '/settings', label: '設定' },
 ]

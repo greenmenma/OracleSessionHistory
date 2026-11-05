@@ -1,21 +1,24 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { useAsync } from '../hooks'
-import { fmtDateTime, fmtDuration, kindLabels } from '../format'
+import { fmtDateTime, fmtDuration, internalKinds, kindLabels } from '../format'
 import SessionDetailPanel from '../components/SessionDetailPanel'
 import KindBadge from '../components/KindBadge'
 import Pager from '../components/Pager'
+import AppCell from '../components/AppCell'
 
 interface Filters {
   q: string
   state: string
   kind: string
   machine: string
-  program: string
+  app: string
   username: string
   osUser: string
   from: string
   to: string
+  /** Oracle 内部プロセス（ジョブ・パラレル実行等）も表示する */
+  includeInternal: boolean
 }
 
 function fromQuery(query: URLSearchParams): Filters {
@@ -24,11 +27,13 @@ function fromQuery(query: URLSearchParams): Filters {
     state: query.get('state') ?? '',
     kind: query.get('kind') ?? '',
     machine: query.get('machine') ?? '',
-    program: query.get('program') ?? '',
+    // 旧画面からのリンク（program=）も受け付ける
+    app: query.get('app') ?? query.get('program') ?? '',
     username: query.get('username') ?? '',
     osUser: query.get('osUser') ?? '',
     from: query.get('from') ?? '',
     to: query.get('to') ?? '',
+    includeInternal: query.get('includeInternal') === 'true',
   }
 }
 
@@ -55,6 +60,7 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
         ...filters,
         from: filters.from || undefined,
         to: filters.to || undefined,
+        includeInternal: filters.includeInternal || undefined,
         page,
         pageSize: 50,
       }),
@@ -62,7 +68,7 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
     autoRefresh ? 10000 : undefined,
   )
 
-  const set = (k: keyof Filters) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+  const set = (k: Exclude<keyof Filters, 'includeInternal'>) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm({ ...form, [k]: e.target.value })
 
   const search = (e: React.FormEvent) => {
@@ -89,7 +95,12 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
       </div>
 
       <form className="card filters" onSubmit={search}>
-        <input className="wide" placeholder="キーワード（端末・プログラム・ユーザ・モジュール・SQL など）" value={form.q} onChange={set('q')} />
+        <input
+          className="wide"
+          placeholder="キーワード（端末・アプリ・プール名・実行ファイル・ユーザ・モジュール・SQL など）"
+          value={form.q}
+          onChange={set('q')}
+        />
         <select value={form.state} onChange={set('state')}>
           <option value="">状態：すべて</option>
           <option value="connected">接続中</option>
@@ -97,20 +108,43 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
         </select>
         <select value={form.kind} onChange={set('kind')}>
           <option value="">種別：すべて</option>
-          {Object.entries(kindLabels).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v}
-            </option>
-          ))}
+          {Object.entries(kindLabels)
+            .filter(([k]) => !internalKinds.includes(k))
+            .map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          <optgroup label="Oracle 内部プロセス">
+            {internalKinds.map((k) => (
+              <option key={k} value={k}>
+                {kindLabels[k] ?? k}
+              </option>
+            ))}
+          </optgroup>
         </select>
         <input placeholder="実行端末" value={form.machine} onChange={set('machine')} />
-        <input placeholder="実行プログラム" value={form.program} onChange={set('program')} />
+        <input placeholder="アプリ" value={form.app} onChange={set('app')} />
         <input placeholder="接続ユーザ" value={form.username} onChange={set('username')} />
-        <input placeholder="OSユーザ" value={form.osUser} onChange={set('osUser')} />
+        <input placeholder="実行ユーザ" value={form.osUser} onChange={set('osUser')} />
         <label className="inline">
           期間
           <input type="datetime-local" value={form.from} onChange={set('from')} />〜
           <input type="datetime-local" value={form.to} onChange={set('to')} />
+        </label>
+        <label className="check" title="ORACLE.EXE (J000) などのジョブ・パラレル実行・バックグラウンドプロセス。DB Link の可能性があるものは常に表示します">
+          <input
+            type="checkbox"
+            checked={form.includeInternal}
+            onChange={(e) => {
+              // チェックの切り替えはすぐに反映する
+              const next = { ...form, includeInternal: e.target.checked }
+              setForm(next)
+              setFilters({ ...filters, includeInternal: e.target.checked })
+              setPage(1)
+            }}
+          />
+          Oracle 内部プロセスも表示
         </label>
         <div className="actions">
           <button type="submit" className="primary">
@@ -142,13 +176,11 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
                 <th>切断</th>
                 <th>接続時間</th>
                 <th>実行端末</th>
-                <th>実行プログラム</th>
+                <th>アプリ</th>
+                <th>実行ユーザ</th>
                 <th>接続ユーザ</th>
-                <th>実行スキーマ</th>
-                <th>OSユーザ</th>
                 <th>モジュール</th>
                 <th>種別</th>
-                <th className="num">SID</th>
               </tr>
             </thead>
             <tbody>
@@ -175,10 +207,14 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
                   </td>
                   <td className="nowrap">{fmtDuration(s.logonTime, s.isConnected ? null : s.disconnectedAt)}</td>
                   <td>{s.machine}</td>
-                  <td>{s.program}</td>
-                  <td>{s.username}</td>
-                  <td>{s.schemaName}</td>
-                  <td>{s.osUser}</td>
+                  <td>
+                    <AppCell appName={s.appName} appDetail={s.appDetail} state={s.procInfoState} error={s.procInfoError} />
+                  </td>
+                  <td className="nowrap">{s.procOwner ?? s.osUser}</td>
+                  <td className="nowrap">
+                    {s.username}
+                    {s.schemaName && s.schemaName !== s.username && <div className="sub">スキーマ {s.schemaName}</div>}
+                  </td>
                   <td className="ellipsis" title={s.module ?? ''}>
                     {s.module}
                   </td>
@@ -187,14 +223,11 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
                     {s.jobName && <span className="badge purple">{s.jobName}</span>}
                     {s.dbLinkOriginCount > 0 && <span className="badge green">接続元特定</span>}
                   </td>
-                  <td className="num">
-                    {s.sid},{s.serial}
-                  </td>
                 </tr>
               ))}
               {data && data.items.length === 0 && (
                 <tr>
-                  <td colSpan={13} className="empty">
+                  <td colSpan={11} className="empty">
                     該当するセッションはありません
                   </td>
                 </tr>
