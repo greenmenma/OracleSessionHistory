@@ -63,6 +63,23 @@ public class ClientProcessRulesTests
         Assert.Equal(expected, ClientProcessRules.IsDriverDefaultProcess(process, program, driver));
     }
 
+    [Theory]
+    [InlineData("w3wp.exe", "w3wp.exe, dotnet.exe", true)]
+    [InlineData("W3WP.EXE", "w3wp.exe", true)]
+    [InlineData(@"C:\Apps\Foo.exe", "foo.exe", true)]
+    [InlineData("JDBC Thin Client", "JDBC Thin Client", true)]
+    [InlineData("販売管理.exe", "販売*", true)]
+    [InlineData(" w3wp.exe ", "w3wp.exe", true)]
+    [InlineData("sqlplus.exe", "w3wp.exe", false)]
+    [InlineData("sqlplus.exe", null, false)]
+    [InlineData("sqlplus.exe", " , ", false)]
+    [InlineData(null, "*", false)]
+    [InlineData("  ", "*", false)]
+    public void IsTargetProgramは登録した実行ファイルだけ(string? program, string? patterns, bool expected)
+    {
+        Assert.Equal(expected, ClientProcessRules.IsTargetProgram(program, patterns));
+    }
+
     private static readonly DateTime Logon = new(2026, 11, 5, 9, 0, 0);
 
     private static ClientProcessInfo Proc(string name, DateTime? started) =>

@@ -27,6 +27,8 @@ public sealed record ObservedLinkUsage
     public string? Module { get; init; }
     public string? Action { get; init; }
     public string? ServerProcess { get; init; }
+    /// <summary>gv$session.process（接続元端末のクライアント PID）</summary>
+    public string? ClientProcess { get; init; }
     public string? SqlId { get; init; }
     public string? SqlText { get; init; }
 }

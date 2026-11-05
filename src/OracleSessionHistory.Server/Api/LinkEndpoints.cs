@@ -23,13 +23,19 @@ public sealed record DbLinkUsageDto(
     long Id, int LinkSourceId, string LinkSourceName, string DbLinkName, string MatchType, int InstId, int Sid, int Serial,
     DateTime LogonTime, string? Username, string? SchemaName, string? OsUser, string? Machine, string? Terminal, string? Program,
     string? Module, string? Action, string? ServerProcess, string? SqlId, string? SqlText, long? MatchedSessionId,
-    DateTime FirstSeenAt, DateTime LastSeenAt, int HitCount)
+    DateTime FirstSeenAt, DateTime LastSeenAt, int HitCount,
+    string? ClientProcess, string AppName, string? AppDetail, string ProcInfoState, string? ProcInfoError, DateTime? ProcInfoAt,
+    string? ProcName, string? ProcPath, string? ProcCommandLine, string? ProcOwner, DateTime? ProcStartedAt, string? ProcParentName,
+    string? IisAppPool, string? IisSite)
 {
     public static DbLinkUsageDto From(DbLinkUsage u, string linkSourceName) => new(
         u.Id, u.LinkSourceId, linkSourceName, u.DbLinkName, u.MatchType, u.InstId, u.Sid, u.Serial,
         u.LogonTime, u.Username, u.SchemaName, u.OsUser, u.Machine, u.Terminal, u.Program,
         u.Module, u.Action, u.ServerProcess, u.SqlId, u.SqlText, u.MatchedSessionId,
-        u.FirstSeenAt, u.LastSeenAt, u.HitCount);
+        u.FirstSeenAt, u.LastSeenAt, u.HitCount,
+        u.ClientProcess, u.AppName, u.AppDetail, u.ProcInfoState, u.ProcInfoError, u.ProcInfoAt,
+        u.ProcName, u.ProcPath, u.ProcCommandLine, u.ProcOwner, u.ProcStartedAt, u.ProcParentName,
+        u.IisAppPool, u.IisSite);
 }
 
 /// <summary>DB Link 接続元の設定・利用状況の API</summary>
@@ -101,7 +107,9 @@ public static class LinkEndpoints
                 var p = QueryHelpers.Contains(q.Trim());
                 query = query.Where(u => EF.Functions.Like(u.Machine, p, "\\") || EF.Functions.Like(u.Program, p, "\\")
                                          || EF.Functions.Like(u.Username, p, "\\") || EF.Functions.Like(u.OsUser, p, "\\")
-                                         || EF.Functions.Like(u.DbLinkName, p, "\\") || EF.Functions.Like(u.SqlText, p, "\\"));
+                                         || EF.Functions.Like(u.DbLinkName, p, "\\") || EF.Functions.Like(u.SqlText, p, "\\")
+                                         || EF.Functions.Like(u.AppName, p, "\\") || EF.Functions.Like(u.ProcPath, p, "\\")
+                                         || EF.Functions.Like(u.ProcOwner, p, "\\"));
             }
             var ps = Math.Clamp(pageSize ?? 50, 1, 500);
             var pg = Math.Max(1, page ?? 1);

@@ -24,6 +24,8 @@ public sealed class DemoWorld
         new("BATCHSV", "JP1Batch.exe", "BATCH", "jp1admin", "夜間集計", "client", 2),
         new("DEV-PC07", "sqlplus.exe", "SYSTEM", "dev07", "SQL*Plus", "client", 1, "SQL*PLUS"),
         new("DEV-PC08", "SQL Developer", "SALES", "dev08", "SQL Developer", "client", 1, "jdbcthin"),
+        // このシステム自身の接続（既定で一覧に出ないことを確認する）
+        new("OSH-SV01", "OracleSessionHistory.Batch.exe", "MONITOR", "svc_osh", "OracleSessionHistory", "client", 1),
         new("KIKAN-DB01", "ORACLE.EXE", "LINKUSER", "SYSTEM", null, "dblink", 4, null),
         new("koukai-db", "oracle@koukai-db (J000)", "BATCH", "oracle", "DBMS_SCHEDULER", "job", 2, null),
         new("koukai-db", "oracle@koukai-db (P001)", "SALES", "oracle", null, "px", 1, null),
@@ -32,7 +34,7 @@ public sealed class DemoWorld
     /// <summary>DB Link 接続元側のセッション（接続元 spid → 利用システム）</summary>
     internal static readonly (string Machine, string Program, string Username, string OsUser, string Sql)[] LinkOrigins =
     [
-        ("KIKAN-AP01", "受注入力.exe", "JUCHU", "kikan01", "select * from ITEM_MASTER@KOUKAI_LINK where ITEM_CD = :1"),
+        ("KIKAN-AP01", "w3wp.exe", "JUCHU", "IIS APPPOOL\\JuchuWeb", "select * from ITEM_MASTER@KOUKAI_LINK where ITEM_CD = :1"),
         ("KIKAN-AP02", "在庫照会.exe", "ZAIKO", "kikan02", "select QTY from STOCK@KOUKAI_LINK.WORLD where WH = :1"),
         ("KIKAN-BAT", "日次連携.exe", "RENKEI", "batch", "insert into SALES_SUMMARY@KOUKAI_LINK select * from W_SALES"),
     ];
@@ -180,6 +182,7 @@ public sealed class DemoWorld
                 Program = o.Program,
                 Module = o.Program,
                 ServerProcess = spid,
+                ClientProcess = $"{6000 + i}:{100 + i}",
                 SqlId = "dlnk" + i,
                 SqlText = o.Sql,
             };
@@ -234,7 +237,7 @@ public static class DemoHistory
                     var logon = date.AddHours(7 + rand.Next(0, 12)).AddMinutes(rand.Next(60)).AddSeconds(rand.Next(60));
                     var end = logon.AddMinutes(rand.Next(1, 240));
                     if (end >= now.AddMinutes(-10)) continue; // 現在接続中のものは収集に任せる
-                    var kind = Tracking.ProgramClassifier.Classify(p.Program, "USER");
+                    var kind = Tracking.ProgramClassifier.Classify(p.Program, "USER", p.Module);
                     // 接続アプリの表示を確認できるよう、クライアントは疑似プロセス情報で取得済みにしておく
                     var pid = rand.Next(1000, 9999);
                     var proc = kind == ProcessKinds.Client ? Processes.DemoProcessInspector.Profile(p.Machine, pid, logon.AddHours(-1)) : null;

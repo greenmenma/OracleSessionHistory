@@ -4,6 +4,7 @@ using OracleSessionHistory.Core.Collection;
 using OracleSessionHistory.Core.Data;
 using OracleSessionHistory.Core.DbLinks;
 using OracleSessionHistory.Core.Entities;
+using OracleSessionHistory.Core.Processes;
 using OracleSessionHistory.Core.Tracking;
 
 namespace OracleSessionHistory.Core.Services;
@@ -185,7 +186,10 @@ public sealed class CollectionService(
                     Serial = u.Serial,
                     LogonTime = u.LogonTime,
                     FirstSeenAt = now,
+                    // 接続元端末のプロセス情報は ProcessInfoService が取得する（それまでは PROGRAM 等から仮のアプリ名を付ける）
+                    ProcInfoState = ProcInfoStates.Pending,
                 };
+                (row.AppName, row.AppDetail) = AppIdentifier.Identify(null, u.Program, u.Module, u.OsUser);
                 db.DbLinkUsages.Add(row);
                 byKey[key] = row;
             }
@@ -199,6 +203,7 @@ public sealed class CollectionService(
             row.Module = u.Module;
             row.Action = u.Action;
             row.ServerProcess = u.ServerProcess;
+            row.ClientProcess = u.ClientProcess;
             row.SqlId = u.SqlId ?? row.SqlId;
             row.SqlText = u.SqlText ?? row.SqlText;
             row.LastSeenAt = now;

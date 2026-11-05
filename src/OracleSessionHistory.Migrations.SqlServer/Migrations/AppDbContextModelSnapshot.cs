@@ -33,6 +33,17 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
                     b.Property<string>("Action")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("AppDetail")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AppName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ClientProcess")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("DbLinkName")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -43,6 +54,13 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
 
                     b.Property<int>("HitCount")
                         .HasColumnType("int");
+
+                    b.Property<string>("IisAppPool")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("IisSite")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("InstId")
                         .HasColumnType("int");
@@ -72,6 +90,35 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
 
                     b.Property<string>("OsUser")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProcCommandLine")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ProcInfoAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ProcInfoError")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProcInfoState")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("ProcName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProcOwner")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProcParentName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProcPath")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ProcStartedAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Program")
                         .HasColumnType("nvarchar(max)");
@@ -106,6 +153,8 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("MatchedSessionId");
+
+                    b.HasIndex("ProcInfoState", "LastSeenAt");
 
                     b.HasIndex("TargetId", "LastSeenAt");
 
@@ -252,6 +301,9 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Password")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TargetPrograms")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("TimeoutSeconds")

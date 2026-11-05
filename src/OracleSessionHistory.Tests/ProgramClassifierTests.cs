@@ -27,6 +27,16 @@ public class ProgramClassifierTests
         Assert.Equal(expected, ProgramClassifier.Classify(program, type));
 
     [Theory]
+    [InlineData("w3wp.exe", "OracleSessionHistory", ProcessKinds.Self)]
+    [InlineData("OracleSessionHistory.Batch.exe", null, ProcessKinds.Self)]
+    [InlineData("OracleSessionHistory.Server", null, ProcessKinds.Self)]
+    [InlineData("dotnet.exe", "oraclesessionhistory", ProcessKinds.Self)]
+    [InlineData("w3wp.exe", "OracleSessionHistoryX", ProcessKinds.Client)]
+    [InlineData("w3wp.exe", "受注", ProcessKinds.Client)]
+    public void このシステム自身の接続はSelf(string program, string? module, string expected) =>
+        Assert.Equal(expected, ProgramClassifier.Classify(program, "USER", module));
+
+    [Theory]
     [InlineData("1234:5678", new[] { "1234", "5678" })]
     [InlineData("4321", new[] { "4321" })]
     [InlineData("abc", new string[0])]

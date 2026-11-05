@@ -143,7 +143,7 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
                 {v}
               </option>
             ))}
-          <optgroup label="Oracle 内部プロセス">
+          <optgroup label="Oracle 内部プロセス・このシステム">
             {internalKinds.map((k) => (
               <option key={k} value={k}>
                 {kindLabels[k] ?? k}
@@ -163,7 +163,7 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
         <label className="check" title="ORACLE.EXE (J000) などのジョブ・パラレル実行・バックグラウンドプロセス。DB Link の可能性があるものは常に表示します">
           {/* チェックの切り替えはすぐに反映する */}
           <input type="checkbox" checked={form.includeInternal} onChange={setBool('includeInternal', true)} />
-          Oracle 内部プロセスも表示
+          Oracle 内部プロセス・このシステムの接続も表示
         </label>
         <label className="check" title="実行端末・アプリを部分一致ではなく完全一致で検索します（接続アプリから開いた場合）">
           <input type="checkbox" checked={form.exact} onChange={setBool('exact', false)} />
@@ -232,6 +232,12 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
                   <td>{s.machine}</td>
                   <td>
                     <AppCell appName={s.appName} appDetail={s.appDetail} state={s.procInfoState} error={s.procInfoError} />
+                    {s.linkOriginApp && (
+                      <div className="link-origin" title="接続元 DB 上で DB Link を使っていたセッションのアプリ">
+                        DB Link 経由: <strong>{s.linkOriginApp}</strong>
+                        {s.linkOriginMachine && <>（{s.linkOriginMachine}）</>}
+                      </div>
+                    )}
                   </td>
                   <td className="nowrap">{s.procOwner ?? s.osUser}</td>
                   <td className="nowrap">

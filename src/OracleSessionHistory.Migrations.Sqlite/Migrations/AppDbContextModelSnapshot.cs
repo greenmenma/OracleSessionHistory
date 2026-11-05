@@ -26,6 +26,17 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
                     b.Property<string>("Action")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("AppDetail")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AppName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ClientProcess")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("DbLinkName")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -36,6 +47,13 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
 
                     b.Property<int>("HitCount")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("IisAppPool")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("IisSite")
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("InstId")
                         .HasColumnType("INTEGER");
@@ -64,6 +82,35 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("OsUser")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProcCommandLine")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ProcInfoAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProcInfoError")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProcInfoState")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProcName")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProcOwner")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProcParentName")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProcPath")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ProcStartedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Program")
@@ -99,6 +146,8 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("MatchedSessionId");
+
+                    b.HasIndex("ProcInfoState", "LastSeenAt");
 
                     b.HasIndex("TargetId", "LastSeenAt");
 
@@ -241,6 +290,9 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Password")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetPrograms")
                         .HasColumnType("TEXT");
 
                     b.Property<int>("TimeoutSeconds")

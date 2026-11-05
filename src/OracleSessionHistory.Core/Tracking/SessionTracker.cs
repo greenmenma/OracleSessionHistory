@@ -136,7 +136,7 @@ public static class SessionTracker
             if (o.SqlText is not null) row.LastSqlText = o.SqlText;
         }
 
-        row.ProcessKind = ProgramClassifier.Classify(o.Program, o.SessionType);
+        row.ProcessKind = ProgramClassifier.Classify(o.Program, o.SessionType, o.Module);
 
         // ジョブ情報は一度取れたら保持する（ジョブ終了後も何のジョブだったか残すため）
         if (o.JobName is not null)

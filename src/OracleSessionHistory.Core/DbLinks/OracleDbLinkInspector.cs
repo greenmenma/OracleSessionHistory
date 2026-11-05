@@ -12,7 +12,7 @@ public sealed class OracleDbLinkInspector : IDbLinkInspector
 
     private const string SessionColumns = """
         s.inst_id, s.sid, s.serial# as serial, s.logon_time, s.username, s.schemaname, s.osuser, s.machine,
-        s.terminal, s.program, s.module, s.action, p.spid
+        s.terminal, s.program, s.module, s.action, s.process, p.spid
         """;
 
     public async Task<IReadOnlyList<DbLinkInfo>> ListLinksAsync(string connectionString, CancellationToken ct)
@@ -177,6 +177,7 @@ public sealed class OracleDbLinkInspector : IDbLinkInspector
         Module = r.Str("module"),
         Action = r.Str("action"),
         ServerProcess = r.Str("spid"),
+        ClientProcess = r.Str("process"),
         SqlId = r.Str("sql_id"),
         SqlText = r.Str("sql_text"),
     };

@@ -12,8 +12,8 @@ internal static class OracleDb
         try
         {
             await conn.OpenAsync(ct);
-            // 監視側の接続であることが分かるようにする
-            conn.ModuleName = "OracleSessionHistory";
+            // 監視側の接続であることが分かるようにする（ProgramClassifier がこの値で一覧から除く）
+            conn.ModuleName = Tracking.ProgramClassifier.SelfModuleName;
             conn.ClientInfo = "OracleSessionHistory.Batch";
             return conn;
         }

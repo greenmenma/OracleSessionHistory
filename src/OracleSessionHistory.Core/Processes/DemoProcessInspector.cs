@@ -42,6 +42,17 @@ public sealed class DemoProcessInspector : IProcessInspector
         if (h == "DEV-PC08")
             return new(pid, "java.exe", @"C:\sqldeveloper\jdk\bin\java.exe", @"java.exe -Xmx1g -jar ""C:\sqldeveloper\sqldeveloper.jar""",
                 @"CORP\dev08", started, "sqldeveloper64W.exe", null, null);
+        // DB Link 接続元 DB を使っている端末（DemoWorld.LinkOrigins）
+        if (h == "KIKAN-AP01")
+            return new(pid, "w3wp.exe", @"c:\windows\system32\inetsrv\w3wp.exe",
+                @"c:\windows\system32\inetsrv\w3wp.exe -ap ""JuchuWeb"" -v ""v4.0""",
+                @"IIS APPPOOL\JuchuWeb", started, "svchost.exe", "JuchuWeb", "Default Web Site/juchu");
+        if (h == "KIKAN-AP02")
+            return new(pid, "在庫照会.exe", @"D:\Kikan\Zaiko\在庫照会.exe", @"D:\Kikan\Zaiko\在庫照会.exe",
+                @"CORP\kikan02", started, "explorer.exe", null, null);
+        if (h == "KIKAN-BAT")
+            return new(pid, "日次連携.exe", @"D:\Batch\Renkei\日次連携.exe", @"D:\Batch\Renkei\日次連携.exe /daily",
+                @"CORP\batch", started, "jp1ajs2.exe", null, null);
         // その他の端末は、プロセスが終了済みとして扱う
         return null;
     }

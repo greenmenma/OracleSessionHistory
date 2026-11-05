@@ -199,6 +199,8 @@ pre.sql.small { font-size: 11px; padding: 6px; }
 .app-name { font-weight: 600; display: flex; align-items: center; gap: 4px; }
 .app-name > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-detail { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link-origin { margin-top: 2px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.link-origin strong { color: var(--text); font-weight: 600; }
 .sub { color: var(--muted); font-size: 11px; }
 
 /* 画面内のフォーム（設定のプロセス情報など） */
@@ -207,3 +209,4 @@ pre.sql.small { font-size: 11px; padding: 6px; }
 .stack-form .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .stack-form input:not([type='checkbox']) { color: var(--text); }
 @media (max-width: 720px) { .stack-form .row { grid-template-columns: 1fr; } }
+.usage .small { font-size: 11px; overflow-wrap: anywhere; }
