@@ -11,6 +11,8 @@ const apiTarget =
 
 export default defineConfig({
   plugins: [react()],
+  // IIS のサブフォルダ（仮想アプリケーション）にも配置できるよう、ビルド結果は相対パスで assets を参照する
+  base: './',
   server: {
     port: process.env.PORT ? Number(process.env.PORT) : 5173,
     proxy: {

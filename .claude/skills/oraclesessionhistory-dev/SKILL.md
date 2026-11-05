@@ -45,9 +45,11 @@ cd src/OracleSessionHistory.Client && npm run dev       # http://localhost:5173 
 - 接続数表：本日〜6日前・本日〜1ヶ月・1ヶ月〜2ヶ月の列
 - 設定：監視対象の追加・接続テスト、DB Link 接続元の追加 → 「DB Link 一覧を取得」→ 選択 → 保存
 - API の確認: `curl http://localhost:<client-port>/api/summary`
+- サブフォルダ配置の確認（IIS の代わり）: `npm run build` 後、`PathBase=/OracleSessionHistory` を指定して Server を起動し、`http://localhost:5292/OracleSessionHistory/` で画面と API が動くこと
 
 ## 4. トラブルシューティング
 
 - `NU1301`（ローカルソースが無い）: リポジトリ直下の `nuget.config` で nuget.org のみを使うようにしてある。別ディレクトリから実行していないか確認。
+- 起動時にマイグレーションのエラー（`PendingModelChangesWarning` 等）: エンティティを変更してマイグレーションを追加していない。`docs/development.md` の「マイグレーション」の手順で SQLite・SQL Server の両方に追加する。
 - Server だけ 500 になる: Aspire ダッシュボードの `server` のログ（構造化ログ）で例外を確認。EF Core の LINQ が SQLite で変換できないケースが多い。
 - Oracle 接続エラー: 設定画面の「接続テスト」でメッセージを確認。権限は `docs/oracle-privileges.md`。

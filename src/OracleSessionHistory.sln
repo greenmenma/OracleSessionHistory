@@ -15,6 +15,12 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OracleSessionHistory.AppHos
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OracleSessionHistory.Tests", "OracleSessionHistory.Tests\OracleSessionHistory.Tests.csproj", "{D6A3F544-C067-4A08-A3CA-415D7486E1CF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OracleSessionHistory.Migrations.Sqlite", "OracleSessionHistory.Migrations.Sqlite\OracleSessionHistory.Migrations.Sqlite.csproj", "{DE7A5998-20ED-40AB-B107-3FC641661EE6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OracleSessionHistory.Migrations.SqlServer", "OracleSessionHistory.Migrations.SqlServer\OracleSessionHistory.Migrations.SqlServer.csproj", "{2EB1C647-5177-41E3-AFB8-95ADBCDBC6C3}"
+EndProject
+Project("{54A90642-561A-4BB1-A94E-469ADEE60C69}") = "OracleSessionHistory.Client", "OracleSessionHistory.Client\OracleSessionHistory.Client.esproj", "{4C7EC8A9-7AE7-4CB6-A96E-E3F399817B8E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -97,6 +103,36 @@ Global
 		{D6A3F544-C067-4A08-A3CA-415D7486E1CF}.Release|x64.Build.0 = Release|Any CPU
 		{D6A3F544-C067-4A08-A3CA-415D7486E1CF}.Release|x86.ActiveCfg = Release|Any CPU
 		{D6A3F544-C067-4A08-A3CA-415D7486E1CF}.Release|x86.Build.0 = Release|Any CPU
+		{DE7A5998-20ED-40AB-B107-3FC641661EE6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DE7A5998-20ED-40AB-B107-3FC641661EE6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DE7A5998-20ED-40AB-B107-3FC641661EE6}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{DE7A5998-20ED-40AB-B107-3FC641661EE6}.Debug|x64.Build.0 = Debug|Any CPU
+		{DE7A5998-20ED-40AB-B107-3FC641661EE6}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{DE7A5998-20ED-40AB-B107-3FC641661EE6}.Debug|x86.Build.0 = Debug|Any CPU
+		{DE7A5998-20ED-40AB-B107-3FC641661EE6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DE7A5998-20ED-40AB-B107-3FC641661EE6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DE7A5998-20ED-40AB-B107-3FC641661EE6}.Release|x64.ActiveCfg = Release|Any CPU
+		{DE7A5998-20ED-40AB-B107-3FC641661EE6}.Release|x64.Build.0 = Release|Any CPU
+		{DE7A5998-20ED-40AB-B107-3FC641661EE6}.Release|x86.ActiveCfg = Release|Any CPU
+		{DE7A5998-20ED-40AB-B107-3FC641661EE6}.Release|x86.Build.0 = Release|Any CPU
+		{2EB1C647-5177-41E3-AFB8-95ADBCDBC6C3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2EB1C647-5177-41E3-AFB8-95ADBCDBC6C3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2EB1C647-5177-41E3-AFB8-95ADBCDBC6C3}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2EB1C647-5177-41E3-AFB8-95ADBCDBC6C3}.Debug|x64.Build.0 = Debug|Any CPU
+		{2EB1C647-5177-41E3-AFB8-95ADBCDBC6C3}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{2EB1C647-5177-41E3-AFB8-95ADBCDBC6C3}.Debug|x86.Build.0 = Debug|Any CPU
+		{2EB1C647-5177-41E3-AFB8-95ADBCDBC6C3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2EB1C647-5177-41E3-AFB8-95ADBCDBC6C3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2EB1C647-5177-41E3-AFB8-95ADBCDBC6C3}.Release|x64.ActiveCfg = Release|Any CPU
+		{2EB1C647-5177-41E3-AFB8-95ADBCDBC6C3}.Release|x64.Build.0 = Release|Any CPU
+		{2EB1C647-5177-41E3-AFB8-95ADBCDBC6C3}.Release|x86.ActiveCfg = Release|Any CPU
+		{2EB1C647-5177-41E3-AFB8-95ADBCDBC6C3}.Release|x86.Build.0 = Release|Any CPU
+		{4C7EC8A9-7AE7-4CB6-A96E-E3F399817B8E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4C7EC8A9-7AE7-4CB6-A96E-E3F399817B8E}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4C7EC8A9-7AE7-4CB6-A96E-E3F399817B8E}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{4C7EC8A9-7AE7-4CB6-A96E-E3F399817B8E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4C7EC8A9-7AE7-4CB6-A96E-E3F399817B8E}.Release|x64.ActiveCfg = Release|Any CPU
+		{4C7EC8A9-7AE7-4CB6-A96E-E3F399817B8E}.Release|x86.ActiveCfg = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

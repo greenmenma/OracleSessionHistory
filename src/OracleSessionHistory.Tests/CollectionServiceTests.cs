@@ -22,9 +22,9 @@ public sealed class CollectionServiceTests : IDisposable
     public CollectionServiceTests()
     {
         _conn.Open();
-        _factory = new TestDbFactory(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_conn).Options);
+        _factory = new TestDbFactory(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_conn, o => o.MigrationsAssembly(AppDatabase.SqliteMigrationsAssembly)).Options);
         using var db = _factory.CreateDbContext();
-        db.Database.EnsureCreated();
+        db.Database.Migrate();
         var t = new MonitorTarget { Name = "基幹公開DB", Provider = "Fake", ConnectionString = "x", IntervalSeconds = 5 };
         db.Targets.Add(t);
         db.SaveChanges();

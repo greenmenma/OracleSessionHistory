@@ -214,6 +214,10 @@ export interface DbLinkInfo {
 
 export class ApiError extends Error {}
 
+/**
+ * API を呼び出す。url は 'api/...' の相対パスで指定する。
+ * IIS のサブフォルダ（例：/OracleSessionHistory/）に配置しても、画面の URL を基準に解決されるようにするため。
+ */
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
     method,
@@ -246,32 +250,32 @@ export function qs(params: Record<string, string | number | boolean | null | und
 }
 
 export const api = {
-  providers: () => request<string[]>('GET', '/api/providers'),
-  targets: () => request<Target[]>('GET', '/api/targets'),
-  createTarget: (t: TargetInput) => request<Target>('POST', '/api/targets', t),
-  updateTarget: (id: number, t: TargetInput) => request<Target>('PUT', `/api/targets/${id}`, t),
-  deleteTarget: (id: number) => request<void>('DELETE', `/api/targets/${id}`),
+  providers: () => request<string[]>('GET', 'api/providers'),
+  targets: () => request<Target[]>('GET', 'api/targets'),
+  createTarget: (t: TargetInput) => request<Target>('POST', 'api/targets', t),
+  updateTarget: (id: number, t: TargetInput) => request<Target>('PUT', `api/targets/${id}`, t),
+  deleteTarget: (id: number) => request<void>('DELETE', `api/targets/${id}`),
   testConnection: (provider: string, connectionString: string, targetId?: number) =>
-    request<{ success: boolean; message: string }>('POST', '/api/targets/test', { provider, connectionString, targetId }),
+    request<{ success: boolean; message: string }>('POST', 'api/targets/test', { provider, connectionString, targetId }),
 
-  summary: (targetId?: number) => request<Summary>('GET', `/api/summary${qs({ targetId })}`),
+  summary: (targetId?: number) => request<Summary>('GET', `api/summary${qs({ targetId })}`),
   sessions: (params: Record<string, string | number | undefined>) =>
-    request<Paged<SessionListItem>>('GET', `/api/sessions${qs(params)}`),
-  session: (id: number) => request<SessionDetail>('GET', `/api/sessions/${id}`),
+    request<Paged<SessionListItem>>('GET', `api/sessions${qs(params)}`),
+  session: (id: number) => request<SessionDetail>('GET', `api/sessions/${id}`),
   connectionCounts: (targetId?: number, q?: string) =>
-    request<ConnectionCounts>('GET', `/api/connection-counts${qs({ targetId, q })}`),
+    request<ConnectionCounts>('GET', `api/connection-counts${qs({ targetId, q })}`),
 
-  linkSources: (targetId: number) => request<LinkSource[]>('GET', `/api/targets/${targetId}/link-sources`),
+  linkSources: (targetId: number) => request<LinkSource[]>('GET', `api/targets/${targetId}/link-sources`),
   createLinkSource: (targetId: number, l: LinkSourceInput) =>
-    request<LinkSource>('POST', `/api/targets/${targetId}/link-sources`, l),
-  updateLinkSource: (id: number, l: LinkSourceInput) => request<LinkSource>('PUT', `/api/link-sources/${id}`, l),
-  deleteLinkSource: (id: number) => request<void>('DELETE', `/api/link-sources/${id}`),
+    request<LinkSource>('POST', `api/targets/${targetId}/link-sources`, l),
+  updateLinkSource: (id: number, l: LinkSourceInput) => request<LinkSource>('PUT', `api/link-sources/${id}`, l),
+  deleteLinkSource: (id: number) => request<void>('DELETE', `api/link-sources/${id}`),
   listDbLinks: (provider: string, connectionString: string, linkSourceId?: number) =>
-    request<{ success: boolean; links: DbLinkInfo[]; message: string | null }>('POST', '/api/db-links', {
+    request<{ success: boolean; links: DbLinkInfo[]; message: string | null }>('POST', 'api/db-links', {
       provider,
       connectionString,
       linkSourceId,
     }),
   dbLinkUsages: (params: Record<string, string | number | undefined>) =>
-    request<Paged<DbLinkUsage>>('GET', `/api/db-link-usages${qs(params)}`),
+    request<Paged<DbLinkUsage>>('GET', `api/db-link-usages${qs(params)}`),
 }

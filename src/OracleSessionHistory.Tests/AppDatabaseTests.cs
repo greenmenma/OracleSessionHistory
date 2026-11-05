@@ -111,9 +111,9 @@ public sealed class AppDatabaseTests
         public Maintenance()
         {
             _conn.Open();
-            _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_conn).Options;
+            _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_conn, o => o.MigrationsAssembly(AppDatabase.SqliteMigrationsAssembly)).Options;
             using var db = new AppDbContext(_options);
-            db.Database.EnsureCreated();
+            db.Database.Migrate();
         }
 
         public void Dispose() => _conn.Dispose();

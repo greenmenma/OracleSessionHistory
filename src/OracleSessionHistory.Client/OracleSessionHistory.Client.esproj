@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.VisualStudio.JavaScript.Sdk/1.0.6887863">
+
+  <!--
+    Visual Studio / Rider のソリューションに Client を表示するためのプロジェクト。
+    dotnet build では npm install・ビルドを実行しない（Server の wwwroot を書き換えないため）。
+    Client のビルドは npm run build、デバッグ起動は AppHost から行う。
+  -->
+  <PropertyGroup>
+    <ShouldRunNpmInstall>false</ShouldRunNpmInstall>
+    <ShouldRunBuildScript>false</ShouldRunBuildScript>
+    <StartupCommand>npm run dev</StartupCommand>
+  </PropertyGroup>
+
+</Project>

@@ -66,8 +66,9 @@ SQLite で `ConnectionStrings__AppDb` を指定しない場合、Batch・Server 
 
 環境変数の場合は `AppDb__Provider=SqlServer` と `ConnectionStrings__AppDb=...` を指定します。
 
-- 初回起動時に `EnsureCreated` でデータベースとテーブルを作成します。データベースが無い場合は作成するため、初回だけ `dbcreator` 権限が必要です。事前に空のデータベースを作成しておけば、そのデータベースの `db_owner`（テーブル作成後は `db_datareader` / `db_datawriter`）で動作します。
-- テーブルが 1 つでも存在するデータベースではテーブルを作成しません。専用のデータベースを用意してください。
+- 起動時にマイグレーションでテーブルを作成・更新します。データベースが無い場合は作成するため、初回だけ `dbcreator` 権限が必要です。事前に空のデータベースを作成しておけば、そのデータベースの `db_owner` で動作します（バージョンアップでスキーマが変わるため、`db_owner` のままにしてください）。
+- 専用のデータベースを用意してください。
+- マイグレーション導入前のバージョンで作成したデータベースは、そのまま引き継がれます。
 - Batch の書き込み中に画面の参照が待たされないよう、`ALTER DATABASE OracleSessionHistory SET READ_COMMITTED_SNAPSHOT ON;` を推奨します。
 - SQLite の既存データは移行されません。切り替えると履歴は空から始まります。
 
@@ -94,6 +95,20 @@ User Id=MONITOR;Password=xxxx;Data Source=(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(H
 cd src\OracleSessionHistory.Client; npm ci; npm run build   # Server\wwwroot に出力
 dotnet publish src\OracleSessionHistory.Server -c Release -o C:\apps\OracleSessionHistory.Server
 ```
+
+#### IIS の Default Web Site のサブフォルダに配置する
+
+`http://サーバー/OracleSessionHistory/` のように、既存サイトの配下に配置できます。ビルド時にサブフォルダ名を指定する必要はありません（Client は相対パスで assets・API を参照します）。
+
+1. [ASP.NET Core Hosting Bundle](https://dotnet.microsoft.com/download/dotnet/10.0)（.NET 10）をインストールする
+2. IIS マネージャーでアプリケーションプールを作成する（.NET CLR バージョン：「マネージド コードなし」）
+3. 「Default Web Site」を右クリック →「アプリケーションの追加」
+   - エイリアス：`OracleSessionHistory`
+   - アプリケーションプール：2 で作成したもの
+   - 物理パス：`C:\apps\OracleSessionHistory.Server`（`dotnet publish` の出力先。`web.config` は publish で生成されます）
+4. `http://サーバー/OracleSessionHistory/` を開く（末尾の `/` が無い場合は自動で付けます）
+
+IIS がアプリケーションのパス（`/OracleSessionHistory`）を ASP.NET Core に渡すため、追加の設定は不要です。IIS 以外（リバースプロキシ配下の Kestrel 等）でサブフォルダに配置する場合は、Server の設定 `PathBase`（例：`/OracleSessionHistory`、環境変数 `PathBase`）を指定してください。
 
 `appsettings.json` の `ConnectionStrings:AppDb` を SQL Server の実際の接続文字列に書き換えます。
 

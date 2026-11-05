@@ -3,6 +3,8 @@
   <ItemGroup>
     <ProjectReference Include="..\OracleSessionHistory.Core\OracleSessionHistory.Core.csproj" />
     <ProjectReference Include="..\OracleSessionHistory.ServiceDefaults\OracleSessionHistory.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\OracleSessionHistory.Migrations.Sqlite\OracleSessionHistory.Migrations.Sqlite.csproj" />
+    <ProjectReference Include="..\OracleSessionHistory.Migrations.SqlServer\OracleSessionHistory.Migrations.SqlServer.csproj" />
   </ItemGroup>
 
   <ItemGroup>

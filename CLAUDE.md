@@ -8,8 +8,9 @@ Oracle の接続履歴（gv$session）を収集・閲覧するシステム。
 |---|---|
 | `src/OracleSessionHistory.Batch` | Worker Service。監視対象ごとに数秒間隔でセッションを取得し、履歴 DB に保存する |
 | `src/OracleSessionHistory.Server` | ASP.NET Core Minimal API。画面用の API と Client の配信 |
-| `src/OracleSessionHistory.Client` | React + TypeScript（Vite）。サマリー・セッション履歴・接続数表・DB Link 利用元・設定 |
+| `src/OracleSessionHistory.Client` | React + TypeScript（Vite）。サマリー・セッション履歴・接続数表・DB Link 利用元・設定。sln には `.esproj` で含める（`dotnet build` では npm を実行しない） |
 | `src/OracleSessionHistory.Core` | Batch/Server 共通。エンティティ、DbContext、Oracle 取得、追跡ロジック |
+| `src/OracleSessionHistory.Migrations.Sqlite` / `.SqlServer` | 履歴 DB の EF Core マイグレーション（プロバイダーごと） |
 | `src/OracleSessionHistory.ServiceDefaults` | Aspire 共通設定（OpenTelemetry・ヘルスチェック） |
 | `src/OracleSessionHistory.AppHost` | Aspire AppHost（デバッグ用。3 プロジェクトをまとめて起動） |
 | `src/OracleSessionHistory.Tests` | xUnit テスト |
@@ -49,7 +50,8 @@ cd src/OracleSessionHistory.Client && npm run typecheck && npm run build
 - C#: nullable 有効、ファイルスコープ namespace、プライマリコンストラクタ可。
 - TypeScript: `strict`。API の型は `src/api.ts` に集約する。外部 UI ライブラリ・ルーターは使わない（`router.ts` の簡易ハッシュルーター）。
 - 履歴 DB はデバッグ時 SQLite、リリース時 SQL Server（`AppDb:Provider`。`appsettings.json` はリリース用の値で、デバッグ用の指定は AppHost と `launchSettings.json`。リリース環境は 1 つのため `appsettings.Development.json` は作らない）。LINQ は両方で変換できるものを使い、スキーマを変えたら `AppDatabaseTests` を通す。セッション削除は `AppDbMaintenance` 経由で行う。
-- スキーマは `EnsureCreated` で作成している。エンティティにカラムを追加した場合は既存 DB を削除するか、`docs/development.md` の手順に従う。
+- スキーマは EF Core マイグレーションで管理する（起動時に Batch・Server が `AppDatabase.MigrateAsync` で適用）。エンティティを変更したら **SQLite・SQL Server の両方** に同じ名前のマイグレーションを追加する（`docs/development.md`）。`AppDbMigrationTests` が追加漏れを検出する。
+- IIS のサブフォルダ（仮想アプリケーション）に配置できること。Client は assets・API を相対パス（`api/...`）で参照し、先頭 `/` の絶対パスを書かない。
 
 ## スキル
 

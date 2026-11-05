@@ -1,5 +1,8 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -41,9 +44,20 @@ public static class AppDatabase
         provider switch
         {
             // 失敗時のリトライは行わない（Batch は次回の取得で再実行する。明示的なトランザクションとも両立させるため）
-            AppDbProviders.SqlServer => options.UseSqlServer(connectionString),
-            _ => options.UseSqlite(connectionString),
+            AppDbProviders.SqlServer => options.UseSqlServer(connectionString, o => o.MigrationsAssembly(SqlServerMigrationsAssembly)),
+            _ => options.UseSqlite(connectionString, o => o.MigrationsAssembly(SqliteMigrationsAssembly)),
         };
+
+    /// <summary>プロバイダーごとのマイグレーションを置くアセンブリ（Batch・Server から参照する）</summary>
+    public const string SqliteMigrationsAssembly = "OracleSessionHistory.Migrations.Sqlite";
+
+    public const string SqlServerMigrationsAssembly = "OracleSessionHistory.Migrations.SqlServer";
+
+    /// <summary>
+    /// マイグレーション導入前（EnsureCreated で作成）のスキーマに相当する最初のマイグレーション。
+    /// 両プロバイダーで同じ名前にする
+    /// </summary>
+    public const string InitialMigrationName = "Initial";
 
     /// <summary>設定から DB の種類を決める。大文字小文字は区別しない</summary>
     public static string ResolveProvider(IConfiguration configuration)
@@ -86,8 +100,57 @@ public static class AppDatabase
         return builder.ToString();
     }
 
+    /// <summary>マイグレーション導入前から存在するテーブル</summary>
+    private static readonly string[] LegacyTables = ["Targets", "Sessions", "LinkSources", "DbLinkUsages"];
+
     /// <summary>
-    /// スキーマを作成する。SQLite の場合は WAL モードを有効にする（Batch と Server の同時アクセスのため）。
+    /// 未適用のマイグレーションを適用する。データベースが無ければ作成する。
+    /// マイグレーション導入前に EnsureCreated で作成した DB は、最初のマイグレーションを適用済みとして引き継ぐ。
+    /// </summary>
+    public static async Task MigrateAsync(AppDbContext db, ILogger logger, CancellationToken ct = default)
+    {
+        await AdoptLegacySchemaAsync(db, logger, ct);
+
+        var pending = (await db.Database.GetPendingMigrationsAsync(ct)).ToList();
+        if (pending.Count > 0)
+            logger.LogInformation("アプリケーション DB のマイグレーションを適用します: {Migrations}", string.Join(", ", pending));
+        await db.Database.MigrateAsync(ct);
+    }
+
+    /// <summary>EnsureCreated で作成された（履歴テーブルが無く、テーブルはある）DB に、最初のマイグレーションの適用記録を追加する</summary>
+    private static async Task AdoptLegacySchemaAsync(AppDbContext db, ILogger logger, CancellationToken ct)
+    {
+        var creator = db.GetService<IRelationalDatabaseCreator>();
+        if (!await creator.ExistsAsync(ct)) return;
+        var history = db.GetService<IHistoryRepository>();
+        if (await history.ExistsAsync(ct)) return;
+
+        var existing = new List<string>();
+        foreach (var table in LegacyTables)
+            if (await TableExistsAsync(db, table, ct)) existing.Add(table);
+        if (existing.Count == 0) return;
+        if (existing.Count != LegacyTables.Length)
+            throw new InvalidOperationException(
+                $"アプリケーション DB に一部のテーブル（{string.Join(", ", existing)}）だけが存在し、マイグレーション履歴がありません。専用のデータベースを指定してください。");
+
+        var initial = db.Database.GetMigrations().First(m => m.EndsWith("_" + InitialMigrationName, StringComparison.Ordinal));
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlRawAsync(history.GetCreateIfNotExistsScript(), ct);
+        await db.Database.ExecuteSqlRawAsync(history.GetInsertScript(new HistoryRow(initial, ProductInfo.GetVersion())), ct);
+        await tx.CommitAsync(ct);
+        logger.LogInformation("マイグレーション導入前の DB を引き継ぎました（{Migration} を適用済みとして記録）", initial);
+    }
+
+    private static async Task<bool> TableExistsAsync(AppDbContext db, string table, CancellationToken ct)
+    {
+        var count = db.Database.IsSqlite()
+            ? await db.Database.SqlQuery<int>($"SELECT COUNT(*) AS \"Value\" FROM sqlite_master WHERE type = 'table' AND name = {table}").SingleAsync(ct)
+            : await db.Database.SqlQuery<int>($"SELECT COUNT(*) AS [Value] FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = SCHEMA_NAME() AND TABLE_NAME = {table}").SingleAsync(ct);
+        return count > 0;
+    }
+
+    /// <summary>
+    /// マイグレーションでスキーマを作成・更新する。SQLite の場合は WAL モードを有効にする（Batch と Server の同時アクセスのため）。
     /// 両プロセスが同時に起動しても失敗しないようにリトライする。
     /// </summary>
     public static async Task InitializeAsync(IServiceProvider sp, ILogger logger, bool seedDemo, CancellationToken ct = default)
@@ -98,7 +161,7 @@ public static class AppDatabase
             try
             {
                 await using var db = await factory.CreateDbContextAsync(ct);
-                await db.Database.EnsureCreatedAsync(ct);
+                await MigrateAsync(db, logger, ct);
                 if (db.Database.IsSqlite())
                     await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;", ct);
 
