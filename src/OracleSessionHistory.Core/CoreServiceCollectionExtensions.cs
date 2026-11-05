@@ -32,7 +32,10 @@ public static class CoreServiceCollectionExtensions
         // 接続元サーバーのプロセス情報（WMI/CIM）
         services.AddSingleton<CimProcessInspector>();
         services.AddSingleton<DemoProcessInspector>();
-        services.AddSingleton<ProcessInspectorResolver>();
+        services.AddSingleton(sp => new ProcessInspectorResolver(
+            sp.GetRequiredService<CimProcessInspector>(), sp.GetRequiredService<DemoProcessInspector>()));
+        services.AddSingleton<HostBackoff>();
+        services.AddSingleton<ProcessInfoService>();
 
         services.AddSingleton<CollectionService>();
         return services;

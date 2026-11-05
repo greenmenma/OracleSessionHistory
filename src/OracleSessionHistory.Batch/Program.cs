@@ -10,6 +10,7 @@ builder.Services.AddWindowsService(o => o.ServiceName = "OracleSessionHistory.Ba
 builder.Services.Configure<CollectorOptions>(builder.Configuration.GetSection("Collector"));
 builder.Services.AddOracleSessionHistoryCore(builder.Configuration);
 builder.Services.AddHostedService<CollectorHost>();
+builder.Services.AddHostedService<ProcessInfoCollector>();
 
 var host = builder.Build();
 host.Run();

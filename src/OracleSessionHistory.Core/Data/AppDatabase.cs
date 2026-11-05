@@ -182,6 +182,15 @@ public static class AppDatabase
                     // 接続数表を確認できるよう過去 2 ヶ月分の履歴も作る
                     db.Sessions.AddRange(Collection.Demo.DemoHistory.Generate(demo.Id, now));
                     await db.SaveChangesAsync(ct);
+                    // デモではプロセス情報の取得も有効にしておく（Demo の監視対象は疑似データを返す）
+                    if (!await db.ProcessInspectionSettings.AnyAsync(ct))
+                    {
+                        db.ProcessInspectionSettings.Add(new ProcessInspectionSettings
+                        {
+                            Id = ProcessInspectionSettings.SingletonId, Enabled = true, ExcludeMachines = "GUEST-*", UpdatedAt = now,
+                        });
+                        await db.SaveChangesAsync(ct);
+                    }
                     logger.LogInformation("デモ用の監視対象を登録しました");
                 }
                 return;

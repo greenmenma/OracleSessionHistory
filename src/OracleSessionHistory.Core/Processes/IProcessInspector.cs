@@ -30,11 +30,11 @@ public interface IProcessInspector
 public sealed class ProcessInspectionException(string message, Exception? inner = null) : Exception(message, inner);
 
 /// <summary>監視対象の Provider に応じてプロセス情報の取得元を選ぶ（Demo の監視対象は疑似データ）</summary>
-public sealed class ProcessInspectorResolver(CimProcessInspector cim, DemoProcessInspector demo)
+public sealed class ProcessInspectorResolver(IProcessInspector real, IProcessInspector demo)
 {
     public IProcessInspector For(string provider) =>
-        string.Equals(provider, Entities.SourceProviders.Demo, StringComparison.OrdinalIgnoreCase) ? demo : cim;
+        string.Equals(provider, Entities.SourceProviders.Demo, StringComparison.OrdinalIgnoreCase) ? demo : real;
 
-    /// <summary>接続テストは実際のサーバーに対して行う</summary>
-    public IProcessInspector Real => cim;
+    /// <summary>実際のサーバーへの取得元（設定画面の接続テスト用）</summary>
+    public IProcessInspector Real => real;
 }

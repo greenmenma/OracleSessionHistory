@@ -9,6 +9,9 @@ public sealed class CollectorOptions
     /// <summary>履歴の保持日数（接続数表で 2 ヶ月分を使うため 70 日以上を推奨）</summary>
     public int RetentionDays { get; set; } = 100;
 
+    /// <summary>接続元サーバーのプロセス情報を取得する間隔（秒）</summary>
+    public int ProcessInfoSeconds { get; set; } = 10;
+
     /// <summary>監視対象が 1 件も無い場合にデモ用の監視対象を登録する</summary>
     public bool SeedDemoTarget { get; set; }
 }

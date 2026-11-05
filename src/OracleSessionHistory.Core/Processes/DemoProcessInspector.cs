@@ -19,7 +19,7 @@ public sealed class DemoProcessInspector : IProcessInspector
     public Task<string> TestAsync(string host, ProcessInspectorOptions options, CancellationToken ct) =>
         Task.FromResult($"{host}（デモ）に接続しました");
 
-    private static ClientProcessInfo? Profile(string host, int pid, DateTime started)
+    internal static ClientProcessInfo? Profile(string host, int pid, DateTime started)
     {
         var h = host.ToUpperInvariant();
         if (h.StartsWith("APSV"))
