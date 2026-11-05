@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using OracleSessionHistory.Core.Data;
 using OracleSessionHistory.Core.Services;
 
 namespace OracleSessionHistory.Batch;
@@ -9,13 +10,14 @@ namespace OracleSessionHistory.Batch;
 /// </summary>
 public sealed class ProcessInfoCollector(
     ProcessInfoService service,
+    AppDatabaseReadiness readiness,
     IOptions<CollectorOptions> options,
     ILogger<ProcessInfoCollector> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // DB の初期化（マイグレーション）は CollectorHost が行うため、少し待ってから始める
-        try { await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken); } catch (OperationCanceledException) { return; }
+        // DB の初期化（マイグレーション）は CollectorHost が行うため、終わるまで待つ
+        try { await readiness.WaitAsync(stoppingToken); } catch (OperationCanceledException) { return; }
 
         while (!stoppingToken.IsCancellationRequested)
         {

@@ -112,7 +112,8 @@ function Ranking({ title, items, param }: { title: string; items?: { name: strin
       <h2>{title}</h2>
       <ul className="ranking">
         {items?.map((i) => (
-          <li key={i.name} onClick={() => navigate('/sessions', { state: 'connected', [param]: i.name })}>
+          // ランキングの名前と同じものだけを開く（端末なしは「(不明)」）
+          <li key={i.name} onClick={() => navigate('/sessions', { state: 'connected', [param]: i.name, exact: 'true' })}>
             <span className="ranking-name" title={i.name}>
               {i.name}
             </span>

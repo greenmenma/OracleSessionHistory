@@ -163,14 +163,15 @@ public sealed class CimProcessInspector(ILogger<CimProcessInspector> logger) : I
         throw new ProcessInspectionException($"端末名 {host} を名前解決できません");
     }
 
-    private static async Task<bool> CanResolveAsync(string host, CancellationToken ct)
+    internal static async Task<bool> CanResolveAsync(string host, CancellationToken ct)
     {
         try
         {
             return (await Dns.GetHostAddressesAsync(host, ct)).Length > 0;
         }
-        catch (SocketException)
+        catch (Exception ex) when (ex is SocketException or ArgumentException)
         {
+            // ArgumentException：空白を含む・長すぎるなど、ホスト名として不正な MACHINE
             return false;
         }
     }

@@ -34,6 +34,12 @@ public class CimProcessInspectorHelperTests
         Assert.Null(CimProcessInspector.ParseDmtf("bad"));
     }
 
+    [Fact]
+    public async Task 不正な端末名は名前解決できないとして扱う()
+    {
+        Assert.False(await CimProcessInspector.CanResolveAsync(new string('a', 300), default));
+    }
+
     [Theory]
     [InlineData(@"CORP\svc_osh", "CORP", "svc_osh")]
     [InlineData("svc_osh@corp.local", null, "svc_osh@corp.local")]

@@ -54,18 +54,64 @@ public sealed class CollectionService(
             TimeSpan.FromSeconds(Math.Max(1, target.IntervalSeconds)));
 
         db.Sessions.AddRange(result.Added);
+        var appNameChanges = DeferAppNameChanges(db, result.Updated);
         target.LastPollAt = snapshot.CapturedAt;
         target.LastSuccessAt = snapshot.CapturedAt;
         target.ConsecutiveFailures = 0;
         target.LastSessionCount = snapshot.Sessions.Count;
         target.LastError = snapshot.Warnings.Count > 0 ? "（警告）" + string.Join(" / ", snapshot.Warnings) : null;
         await db.SaveChangesAsync(ct);
+        await ApplyAppNameChangesAsync(db, target.Name, appNameChanges, ct);
 
         if (result.Added.Count > 0 || result.Disconnected.Count > 0)
             logger.LogInformation("[{Target}] 取得 {Observed} 件 / 新規 {Added} 件 / 切断 {Disconnected} 件",
                 target.Name, snapshot.Sessions.Count, result.Added.Count, result.Disconnected.Count);
 
         return new PollOutcome(true, snapshot.Sessions.Count, result.Added.Count, result.Disconnected.Count, null);
+    }
+
+    /// <summary>
+    /// 既存行の仮のアプリ名（PROGRAM・MODULE 由来）の変更は通常の保存から外す。
+    /// 行を読み込んだ後にプロセス情報の取得処理（別ループ）がアプリ名を確定していた場合に、古い値で上書きしないため。
+    /// </summary>
+    private static List<(long Id, string AppName, string? AppDetail)> DeferAppNameChanges(AppDbContext db, IEnumerable<TrackedSession> updated)
+    {
+        var changes = new List<(long, string, string?)>();
+        foreach (var row in updated)
+        {
+            var entry = db.Entry(row);
+            var name = entry.Property(x => x.AppName);
+            var detail = entry.Property(x => x.AppDetail);
+            if (!name.IsModified && !detail.IsModified) continue;
+            changes.Add((row.Id, row.AppName, row.AppDetail));
+            name.IsModified = false;
+            detail.IsModified = false;
+        }
+        return changes;
+    }
+
+    /// <summary>
+    /// 仮のアプリ名の変更を、プロセス情報で確定していない行にだけ反映する（同じ値の行はまとめて更新）。
+    /// 表示用の補助情報のため、失敗してもセッションの取得自体は成功として扱う。
+    /// </summary>
+    private async Task ApplyAppNameChangesAsync(AppDbContext db, string targetName,
+        List<(long Id, string AppName, string? AppDetail)> changes, CancellationToken ct)
+    {
+        try
+        {
+            foreach (var g in changes.GroupBy(c => (c.AppName, c.AppDetail)))
+            {
+                var ids = g.Select(c => c.Id).ToList();
+                var (name, detail) = g.Key;
+                await db.Sessions
+                    .Where(s => ids.Contains(s.Id) && s.ProcInfoState != ProcInfoStates.Resolved)
+                    .ExecuteUpdateAsync(u => u.SetProperty(s => s.AppName, name).SetProperty(s => s.AppDetail, detail), ct);
+            }
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "[{Target}] アプリ名の更新に失敗しました（次回の取得で再度反映します）", targetName);
+        }
     }
 
     /// <summary>DB Link 接続元 DB を調べ、DB Link を使っているセッションを記録する</summary>

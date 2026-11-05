@@ -18,11 +18,12 @@ public sealed class CollectionServiceTests : IDisposable
     private readonly FakeInspector _inspector = new();
     private readonly CollectionService _service;
     private readonly int _targetId;
+    private readonly BeforeNextSaveInterceptor _beforeSave = new();
 
     public CollectionServiceTests()
     {
         _conn.Open();
-        _factory = new TestDbFactory(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_conn, o => o.MigrationsAssembly(AppDatabase.SqliteMigrationsAssembly)).Options);
+        _factory = new TestDbFactory(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_conn, o => o.MigrationsAssembly(AppDatabase.SqliteMigrationsAssembly)).AddInterceptors(_beforeSave).Options);
         using var db = _factory.CreateDbContext();
         db.Database.Migrate();
         var t = new MonitorTarget { Name = "基幹公開DB", Provider = "Fake", ConnectionString = "x", IntervalSeconds = 5 };
@@ -52,6 +53,36 @@ public sealed class CollectionServiceTests : IDisposable
 
         using var db = _factory.CreateDbContext();
         Assert.Equal(2, await db.Sessions.CountAsync());
+    }
+
+    [Fact]
+    public async Task 収集中にプロセス情報で確定したアプリ名を上書きしない()
+    {
+        _source.Next = [Obs(1, "w3wp.exe")];
+        await _service.PollSessionsAsync(_targetId, default);
+
+        // 収集処理が行を読み込んだ後・保存する前に、プロセス情報の取得処理がアプリ名を確定した状況
+        _beforeSave.Arm("UPDATE Sessions SET ProcInfoState = 'Resolved', AppName = 'IIS: Foo', AppDetail = 'Default Web Site/foo'");
+        _source.Next = [Obs(1, "w3wp.exe") with { Module = "別のモジュール" }];
+        await _service.PollSessionsAsync(_targetId, default);
+
+        using var db = _factory.CreateDbContext();
+        var s = await db.Sessions.SingleAsync();
+        Assert.Equal("IIS: Foo", s.AppName);
+        Assert.Equal("Default Web Site/foo", s.AppDetail);
+        Assert.Equal("別のモジュール", s.Module);
+    }
+
+    [Fact]
+    public async Task 未確定のアプリ名はモジュールの変化を保存する()
+    {
+        _source.Next = [Obs(1, "販売.exe")];
+        await _service.PollSessionsAsync(_targetId, default);
+        _source.Next = [Obs(1, "販売.exe") with { Module = "受注入力" }];
+        await _service.PollSessionsAsync(_targetId, default);
+
+        using var db = _factory.CreateDbContext();
+        Assert.Equal("受注入力", (await db.Sessions.SingleAsync()).AppDetail);
     }
 
     [Fact]
