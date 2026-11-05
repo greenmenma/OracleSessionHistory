@@ -1,6 +1,6 @@
 import { api, type DbLinkUsage } from '../api'
 import { useAsync } from '../hooks'
-import { fmtDateTime, fmtDuration, kindLabels, matchTypeLabels } from '../format'
+import { fmtDateTime, fmtDuration, kindLabels, matchTypeLabels, procInfoLabels } from '../format'
 
 export default function SessionDetailPanel({ id, onClose }: { id: number; onClose: () => void }) {
   const { data, error } = useAsync(() => api.session(id), [id], 10000)
@@ -35,7 +35,37 @@ export default function SessionDetailPanel({ id, onClose }: { id: number; onClos
               <Prop label="種別" value={kindLabels[s.processKind] ?? s.processKind} />
             </dl>
 
-            <h3>利用システムの特定情報</h3>
+            <h3>接続アプリ</h3>
+            <dl className="props">
+              <Prop label="アプリ" value={s.appName} />
+              <Prop label="補足" value={s.appDetail} />
+              <Prop
+                label="プロセス情報"
+                value={`${procInfoLabels[s.procInfoState] ?? s.procInfoState}${s.procInfoError ? `：${s.procInfoError}` : ''}${
+                  s.procInfoAt ? `（${fmtDateTime(s.procInfoAt)}）` : ''
+                }`}
+              />
+              {s.procInfoState === 'Resolved' && (
+                <>
+                  <Prop label="IIS アプリケーションプール" value={s.iisAppPool} />
+                  <Prop label="IIS サイト / パス" value={s.iisSite} />
+                  <Prop label="プロセス名" value={s.procName} />
+                  <Prop label="実行ファイル" value={s.procPath} />
+                  <Prop label="コマンドライン" value={s.procCommandLine} pre />
+                  <Prop label="実行ユーザ" value={s.procOwner} />
+                  <Prop label="プロセス開始" value={fmtDateTime(s.procStartedAt)} />
+                  <Prop label="親プロセス" value={s.procParentName} />
+                </>
+              )}
+            </dl>
+            {s.procInfoState === 'Failed' && (
+              <p className="muted">
+                接続元サーバーに WMI（WinRM / DCOM）で接続できませんでした。<a href="#/settings">設定</a>
+                の「プロセス情報の取得」でアカウントと接続テストを確認してください。時間をおいて自動で再試行します。
+              </p>
+            )}
+
+            <h3>利用システムの特定情報（Oracle）</h3>
             <dl className="props">
               <Prop label="実行端末 (MACHINE)" value={s.machine} />
               <Prop label="端末 (TERMINAL)" value={s.terminal} />

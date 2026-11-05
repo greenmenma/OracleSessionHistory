@@ -54,7 +54,7 @@ export interface Summary {
   dbLinkSuspects: number
   jobs: number
   targets: TargetSummary[]
-  topPrograms: NameCount[]
+  topApps: NameCount[]
   topMachines: NameCount[]
 }
 
@@ -81,7 +81,15 @@ export interface SessionListItem {
   disconnectedAt: string | null
   disconnectUncertain: boolean
   dbLinkOriginCount: number
+  appName: string
+  appDetail: string | null
+  procOwner: string | null
+  procInfoState: ProcInfoState
+  procInfoError: string | null
 }
+
+/** プロセス情報の取得状態 */
+export type ProcInfoState = 'Pending' | 'Resolved' | 'NotFound' | 'Mismatch' | 'Failed' | 'NotApplicable'
 
 export interface Paged<T> {
   items: T[]
@@ -132,6 +140,19 @@ export interface TrackedSession {
   disconnectedAt: string | null
   disconnectDetectedAt: string | null
   disconnectUncertain: boolean
+  appName: string
+  appDetail: string | null
+  procInfoState: ProcInfoState
+  procInfoError: string | null
+  procInfoAt: string | null
+  procName: string | null
+  procPath: string | null
+  procCommandLine: string | null
+  procOwner: string | null
+  procStartedAt: string | null
+  procParentName: string | null
+  iisAppPool: string | null
+  iisSite: string | null
 }
 
 export interface DbLinkUsage {
@@ -171,7 +192,11 @@ export interface SessionDetail {
 
 export interface ConnectionCountRow {
   machine: string | null
-  program: string | null
+  appName: string
+  appDetail: string | null
+  owner: string | null
+  connected: number
+  lastSeenAt: string
   today: number
   d1: number
   d2: number
@@ -210,6 +235,26 @@ export interface DbLinkInfo {
   host: string | null
   created: string | null
   fullName: string
+}
+
+export interface ProcessSettings {
+  enabled: boolean
+  userName: string | null
+  hasPassword: boolean
+  dnsSuffix: string | null
+  timeoutSeconds: number
+  excludeMachines: string | null
+  updatedAt: string | null
+}
+
+/** password は null（変更なし）・''（クリア）・新しい値 */
+export interface ProcessSettingsInput {
+  enabled: boolean
+  userName: string | null
+  password: string | null
+  dnsSuffix: string | null
+  timeoutSeconds: number
+  excludeMachines: string | null
 }
 
 export class ApiError extends Error {}
@@ -259,7 +304,7 @@ export const api = {
     request<{ success: boolean; message: string }>('POST', 'api/targets/test', { provider, connectionString, targetId }),
 
   summary: (targetId?: number) => request<Summary>('GET', `api/summary${qs({ targetId })}`),
-  sessions: (params: Record<string, string | number | undefined>) =>
+  sessions: (params: Record<string, string | number | boolean | undefined>) =>
     request<Paged<SessionListItem>>('GET', `api/sessions${qs(params)}`),
   session: (id: number) => request<SessionDetail>('GET', `api/sessions/${id}`),
   connectionCounts: (targetId?: number, q?: string) =>
@@ -276,6 +321,10 @@ export const api = {
       connectionString,
       linkSourceId,
     }),
+  processSettings: () => request<ProcessSettings>('GET', 'api/process-settings'),
+  updateProcessSettings: (s: ProcessSettingsInput) => request<ProcessSettings>('PUT', 'api/process-settings', s),
+  testProcessSettings: (host: string, settings: ProcessSettingsInput) =>
+    request<{ success: boolean; message: string }>('POST', 'api/process-settings/test', { host, settings }),
   dbLinkUsages: (params: Record<string, string | number | undefined>) =>
     request<Paged<DbLinkUsage>>('GET', `api/db-link-usages${qs(params)}`),
 }

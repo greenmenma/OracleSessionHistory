@@ -236,6 +236,39 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
                     b.ToTable("Targets");
                 });
 
+            modelBuilder.Entity("OracleSessionHistory.Core.Entities.ProcessInspectionSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<string>("DnsSuffix")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ExcludeMachines")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Password")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("TimeoutSeconds")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UserName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ProcessInspectionSettings");
+                });
+
             modelBuilder.Entity("OracleSessionHistory.Core.Entities.TrackedSession", b =>
                 {
                     b.Property<long>("Id")
@@ -246,6 +279,14 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
 
                     b.Property<string>("Action")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AppDetail")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AppName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<long?>("AuditSid")
                         .HasColumnType("bigint");
@@ -279,6 +320,13 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
 
                     b.Property<DateTime>("FirstSeenAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("IisAppPool")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("IisSite")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("InstId")
                         .HasColumnType("int");
@@ -325,6 +373,35 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
 
                     b.Property<int?>("Port")
                         .HasColumnType("int");
+
+                    b.Property<string>("ProcCommandLine")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ProcInfoAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ProcInfoError")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProcInfoState")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("ProcName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProcOwner")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProcParentName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProcPath")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ProcStartedAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("ProcessKind")
                         .IsRequired()
@@ -378,7 +455,11 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
 
                     b.HasIndex("Program");
 
+                    b.HasIndex("IsConnected", "ProcInfoState");
+
                     b.HasIndex("TargetId", "IsConnected");
+
+                    b.HasIndex("TargetId", "Machine", "AppName");
 
                     b.HasIndex("TargetId", "InstId", "Sid", "Serial", "LogonTime")
                         .IsUnique();

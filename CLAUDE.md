@@ -8,8 +8,8 @@ Oracle の接続履歴（gv$session）を収集・閲覧するシステム。
 |---|---|
 | `src/OracleSessionHistory.Batch` | Worker Service。監視対象ごとに数秒間隔でセッションを取得し、履歴 DB に保存する |
 | `src/OracleSessionHistory.Server` | ASP.NET Core Minimal API。画面用の API と Client の配信 |
-| `src/OracleSessionHistory.Client` | React + TypeScript（Vite）。サマリー・セッション履歴・接続数表・DB Link 利用元・設定。sln には `.esproj` で含める（`dotnet build` では npm を実行しない）。ビルド結果は `dist` に出力し、Server の `dotnet publish` 時に発行先の `wwwroot` へ配置する |
-| `src/OracleSessionHistory.Core` | Batch/Server 共通。エンティティ、DbContext、Oracle 取得、追跡ロジック |
+| `src/OracleSessionHistory.Client` | React + TypeScript（Vite）。サマリー・セッション履歴・接続アプリ・DB Link 利用元・設定。sln には `.esproj` で含める（`dotnet build` では npm を実行しない）。ビルド結果は `dist` に出力し、Server の `dotnet publish` 時に発行先の `wwwroot` へ配置する |
+| `src/OracleSessionHistory.Core` | Batch/Server 共通。エンティティ、DbContext、Oracle 取得、追跡ロジック、接続元プロセス情報（`Processes/`） |
 | `src/OracleSessionHistory.Migrations.Sqlite` / `.SqlServer` | 履歴 DB の EF Core マイグレーション（プロバイダーごと） |
 | `src/OracleSessionHistory.ServiceDefaults` | Aspire 共通設定（OpenTelemetry・ヘルスチェック） |
 | `src/OracleSessionHistory.AppHost` | Aspire AppHost（デバッグ用。3 プロジェクトをまとめて起動） |
@@ -37,8 +37,10 @@ cd src/OracleSessionHistory.Client && npm run typecheck && npm run build
 - **同じ Oracle セッションは 1 行。** キーは `(TargetId, InstId, Sid, Serial, LogonTime)`。新規行を作る前に既存行を必ず探す（`SessionTracker`）。
 - 追跡ロジックは `SessionTracker`（DB 非依存の純粋関数）に置き、変更時は `SessionTrackerTests` にテストを追加する。
 - Oracle の SQL は `OracleSessionSource` / `OracleDbLinkInspector` に集約する。付加情報（ジョブ・SQL テキスト等）の取得は `TryQueryAsync` で失敗を警告にとどめ、セッション取得自体を失敗させない。
+- **接続アプリの特定**（接続元サーバーの WMI/CIM）は `ProcessInfoService` に置き、セッション収集と独立させる（失敗しても `Sessions` の接続・切断に触れない）。アプリ名の規則は `AppIdentifier`（純粋関数）に置き、`AppIdentifierTests` にテストを追加する。`SessionTracker` は `ProcInfoState=Resolved` の `AppName` を上書きしない（`docs/process-info.md`）。
+- 画面・集計は既定で Oracle 内部プロセスを除く（`SessionQueries.WhereVisible`。DB Link の可能性は表示する）。
 - 監視対象の種類を増やすときは `ISessionSource`（と必要なら `IDbLinkInspector`）を実装し、`CoreServiceCollectionExtensions` に登録する。`SourceProviders` に定数を追加する。
-- API は接続文字列のパスワードを返さない（`ConnectionStringMasker`）。エンティティをそのまま返す場合は `MonitorTarget` / `LinkSource` を含めないこと。
+- API は接続文字列・プロセス情報取得アカウントのパスワードを返さない（`ConnectionStringMasker`、`ProcessSettingsDto.HasPassword`）。エンティティをそのまま返す場合は `MonitorTarget` / `LinkSource` を含めないこと。
 - 監視対象の設定を変更したら `UpdatedAt` を更新する（Batch はこの値で再起動を判断する）。
 - エラーは `ILogger` で Warning 以上を出す（ファイル `logs/` に残る。ServiceDefaults の `AddFileLogging`）。例外を握りつぶす場合も必ずログに残す。
 - 日時はアプリ・DB ともにローカル時刻（`DateTime.Now`）で扱う。Oracle の `logon_time` は DB サーバーの時刻。

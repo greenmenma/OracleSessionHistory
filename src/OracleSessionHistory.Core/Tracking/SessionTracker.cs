@@ -1,5 +1,6 @@
 using OracleSessionHistory.Core.Collection;
 using OracleSessionHistory.Core.Entities;
+using OracleSessionHistory.Core.Processes;
 
 namespace OracleSessionHistory.Core.Tracking;
 
@@ -81,6 +82,8 @@ public static class SessionTracker
                     IsConnected = true,
                 };
                 CopyObserved(o, row, now);
+                // プロセス情報は通常のクライアント接続のみ取得する（DB Link・Oracle 内部プロセスは接続元が DB サーバー自身）
+                row.ProcInfoState = row.ProcessKind == ProcessKinds.Client ? ProcInfoStates.Pending : ProcInfoStates.NotApplicable;
                 result.Added.Add(row);
             }
         }
@@ -152,6 +155,10 @@ public static class SessionTracker
             row.JobName = o.Action;
         }
         if (o.ParentInfo is not null) row.ParentInfo = o.ParentInfo;
+
+        // プロセス情報で確定したアプリ名は上書きしない
+        if (row.ProcInfoState != ProcInfoStates.Resolved)
+            (row.AppName, row.AppDetail) = AppIdentifier.Identify(null, row.Program, row.Module, row.OsUser);
 
         row.LastSeenAt = now;
         if (string.Equals(o.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase)) row.LastActiveAt = now;

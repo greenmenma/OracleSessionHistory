@@ -235,8 +235,25 @@ public static class DemoHistory
                     var end = logon.AddMinutes(rand.Next(1, 240));
                     if (end >= now.AddMinutes(-10)) continue; // 現在接続中のものは収集に任せる
                     var kind = Tracking.ProgramClassifier.Classify(p.Program, "USER");
+                    // 接続アプリの表示を確認できるよう、クライアントは疑似プロセス情報で取得済みにしておく
+                    var pid = rand.Next(1000, 9999);
+                    var proc = kind == ProcessKinds.Client ? Processes.DemoProcessInspector.Profile(p.Machine, pid, logon.AddHours(-1)) : null;
+                    var (appName, appDetail) = Processes.AppIdentifier.Identify(proc, p.Program, p.Module ?? p.Program, p.OsUser);
                     list.Add(new TrackedSession
                     {
+                        AppName = appName,
+                        AppDetail = appDetail,
+                        ProcInfoState = proc is not null ? ProcInfoStates.Resolved : ProcInfoStates.NotApplicable,
+                        ProcInfoAt = proc is not null ? logon.AddSeconds(10) : null,
+                        ProcName = proc?.Name,
+                        ProcPath = proc?.ExecutablePath,
+                        ProcCommandLine = proc?.CommandLine,
+                        ProcOwner = proc?.Owner,
+                        ProcStartedAt = proc?.StartedAt,
+                        ProcParentName = proc?.ParentName,
+                        IisAppPool = proc?.IisAppPool,
+                        IisSite = proc?.IisSite,
+                        ClientProcess = pid.ToString(),
                         TargetId = targetId,
                         InstId = 1,
                         Sid = sid++ % 3000 + 10,

@@ -87,6 +87,10 @@ User Id=MONITOR;Password=xxxx;Data Source=(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(H
 
 必要な権限は [oracle-privileges.md](oracle-privileges.md) を参照してください。
 
+## 接続アプリの特定（プロセス情報の取得）
+
+「設定」→「プロセス情報の取得」で、接続元サーバーに問い合わせるドメインアカウントを登録して有効にします。接続先サーバーの準備（WinRM / DCOM・権限）は [process-info.md](process-info.md) を参照してください。
+
 ## 本番配置
 
 ### Server（IIS または Kestrel）
@@ -128,7 +132,8 @@ Server と **同じ** `ConnectionStrings:AppDb`・`AppDb:Provider` を設定し�
 | 項目 | 既定値 | 内容 |
 |---|---|---|
 | `ReloadSeconds` | 10 | 監視対象の設定変更を確認する間隔 |
-| `RetentionDays` | 100 | 切断済み履歴の保持日数（接続数表で 2 ヶ月分使うため 70 以上推奨） |
+| `RetentionDays` | 100 | 切断済み履歴の保持日数（接続アプリ表で 2 ヶ月分使うため 70 以上推奨） |
+| `ProcessInfoSeconds` | 10 | 接続元サーバーのプロセス情報を取得する間隔 |
 | `SeedDemoTarget` | false（デバッグ起動時は true） | 監視対象が無いときにデモ用を登録 |
 
 ### ログ（エラーの記録）
@@ -156,6 +161,6 @@ Batch・Server とも、Warning 以上のログ（取得失敗・DB Link 接続�
 
 ### セキュリティ
 
-- 接続文字列は履歴 DB に平文で保存されます。履歴 DB ファイルのアクセス権を Batch / Server の実行ユーザに限定してください。
+- 接続文字列とプロセス情報取得用アカウントのパスワードは履歴 DB に平文で保存されます。履歴 DB ファイルのアクセス権を Batch / Server の実行ユーザに限定してください。
 - API はパスワードを `********` にマスクして返します。
 - 画面には認証機能がありません。社内ネットワークに限定するか、IIS の Windows 認証等で保護してください。

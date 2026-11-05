@@ -16,7 +16,7 @@ export default function SummaryPage({ targetId }: { targetId?: number }) {
 
       <div className="tiles">
         <Tile label="接続数" value={data?.connections} onClick={() => navigate('/sessions', { state: 'connected' })} />
-        <Tile label="アプリ数" value={data?.apps} note="接続中の実行プログラム" />
+        <Tile label="アプリ数" value={data?.apps} note="接続中のアプリ（IIS プール・exe 等）" onClick={() => navigate('/counts')} />
         <Tile label="端末数" value={data?.terminals} note="接続中の実行端末" />
         <Tile label="履歴数" value={data?.history} note="切断済みセッション" onClick={() => navigate('/sessions', { state: 'disconnected' })} />
       </div>
@@ -27,7 +27,6 @@ export default function SummaryPage({ targetId }: { targetId?: number }) {
           value={data?.dbLinkSuspects}
           onClick={() => navigate('/sessions', { state: 'connected', kind: 'DbLinkSuspect' })}
         />
-        <Tile label="実行中ジョブ" value={data?.jobs} onClick={() => navigate('/sessions', { state: 'connected', kind: 'JobSlave' })} />
       </div>
 
       <section className="card">
@@ -43,7 +42,6 @@ export default function SummaryPage({ targetId }: { targetId?: number }) {
                 <th className="num">端末数</th>
                 <th className="num">履歴数</th>
                 <th className="num">DB Link?</th>
-                <th className="num">ジョブ</th>
                 <th>最終取得成功</th>
                 <th>エラー</th>
               </tr>
@@ -71,7 +69,6 @@ export default function SummaryPage({ targetId }: { targetId?: number }) {
                   <td className="num">{t.terminals}</td>
                   <td className="num">{t.history}</td>
                   <td className="num">{t.dbLinkSuspects}</td>
-                  <td className="num">{t.jobs}</td>
                   <td>{fmtDateTime(t.lastSuccessAt)}</td>
                   <td className="error-text ellipsis" title={t.lastError ?? ''}>
                     {t.lastError}
@@ -80,7 +77,7 @@ export default function SummaryPage({ targetId }: { targetId?: number }) {
               ))}
               {data && data.targets.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="empty">
+                  <td colSpan={9} className="empty">
                     監視対象がありません。<a href="#/settings">設定</a>から追加してください。
                   </td>
                 </tr>
@@ -91,7 +88,7 @@ export default function SummaryPage({ targetId }: { targetId?: number }) {
       </section>
 
       <div className="two-col">
-        <Ranking title="接続数の多いプログラム" items={data?.topPrograms} param="program" />
+        <Ranking title="接続数の多いアプリ" items={data?.topApps} param="app" />
         <Ranking title="接続数の多い端末" items={data?.topMachines} param="machine" />
       </div>
     </div>

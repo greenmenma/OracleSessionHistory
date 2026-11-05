@@ -45,3 +45,16 @@ export const matchTypeLabels: Record<string, string> = {
   SQL: 'SQLの@DBLINK',
   SYNONYM: 'シノニム経由',
 }
+
+/** プロセス情報の取得状態 */
+export const procInfoLabels: Record<string, string> = {
+  Pending: '取得待ち',
+  Resolved: '取得済み',
+  NotFound: '終了済み',
+  Mismatch: '不一致',
+  Failed: '取得失敗',
+  NotApplicable: '対象外',
+}
+
+/** Oracle 内部プロセス（既定で非表示にする種別） */
+export const internalKinds = ['JobSlave', 'ParallelSlave', 'AqSlave', 'DataPump', 'OracleInternal', 'Background']
