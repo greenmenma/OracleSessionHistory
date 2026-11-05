@@ -14,6 +14,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<TrackedSession> Sessions => Set<TrackedSession>();
     public DbSet<LinkSource> LinkSources => Set<LinkSource>();
     public DbSet<DbLinkUsage> DbLinkUsages => Set<DbLinkUsage>();
+    public DbSet<ProcessInspectionSettings> ProcessInspectionSettings => Set<ProcessInspectionSettings>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -37,7 +38,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.Machine).HasMaxLength(256);
             e.Property(x => x.Program).HasMaxLength(256);
             e.Property(x => x.ProcessKind).HasMaxLength(30);
+            // 接続アプリの集計（端末 × アプリ）と、プロセス情報の取得対象の検索に使う
+            e.Property(x => x.AppName).HasMaxLength(256);
+            e.Property(x => x.ProcInfoState).HasMaxLength(20);
+            e.Property(x => x.IisAppPool).HasMaxLength(256);
+            e.HasIndex(x => new { x.TargetId, x.Machine, x.AppName });
+            e.HasIndex(x => new { x.IsConnected, x.ProcInfoState });
             e.HasOne(x => x.Target).WithMany().HasForeignKey(x => x.TargetId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<ProcessInspectionSettings>(e =>
+        {
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.UserName).HasMaxLength(256);
+            e.Property(x => x.DnsSuffix).HasMaxLength(256);
         });
 
         b.Entity<LinkSource>(e =>

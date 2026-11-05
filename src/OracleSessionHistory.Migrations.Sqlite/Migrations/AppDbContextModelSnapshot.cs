@@ -225,6 +225,39 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
                     b.ToTable("Targets");
                 });
 
+            modelBuilder.Entity("OracleSessionHistory.Core.Entities.ProcessInspectionSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DnsSuffix")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ExcludeMachines")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Password")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("TimeoutSeconds")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ProcessInspectionSettings");
+                });
+
             modelBuilder.Entity("OracleSessionHistory.Core.Entities.TrackedSession", b =>
                 {
                     b.Property<long>("Id")
@@ -232,6 +265,14 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Action")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AppDetail")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AppName")
+                        .IsRequired()
+                        .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
                     b.Property<long?>("AuditSid")
@@ -265,6 +306,13 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("FirstSeenAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("IisAppPool")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("IisSite")
                         .HasColumnType("TEXT");
 
                     b.Property<int>("InstId")
@@ -312,6 +360,35 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
 
                     b.Property<int?>("Port")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("ProcCommandLine")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ProcInfoAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProcInfoError")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProcInfoState")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProcName")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProcOwner")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProcParentName")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProcPath")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ProcStartedAt")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("ProcessKind")
                         .IsRequired()
@@ -365,7 +442,11 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
 
                     b.HasIndex("Program");
 
+                    b.HasIndex("IsConnected", "ProcInfoState");
+
                     b.HasIndex("TargetId", "IsConnected");
+
+                    b.HasIndex("TargetId", "Machine", "AppName");
 
                     b.HasIndex("TargetId", "InstId", "Sid", "Serial", "LogonTime")
                         .IsUnique();

@@ -60,6 +60,27 @@ public class TrackedSession
     /// <summary>親セッション情報（パラレルスレーブの場合のコーディネータ等）</summary>
     public string? ParentInfo { get; set; }
 
+    // ---- 接続アプリの特定（接続元サーバーのプロセス情報） ----
+    /// <summary>アプリ名（一覧・集計のキー）。プロセス情報が取れれば「IIS: プール名」等、取れなければ PROGRAM</summary>
+    public string AppName { get; set; } = "";
+    /// <summary>アプリの補足（IIS のサイト／パス、実行ファイルのフォルダ等）</summary>
+    public string? AppDetail { get; set; }
+    /// <summary>プロセス情報の取得状態（<see cref="ProcInfoStates"/>）</summary>
+    public string ProcInfoState { get; set; } = ProcInfoStates.Pending;
+    /// <summary>プロセス情報を取得できなかった理由</summary>
+    public string? ProcInfoError { get; set; }
+    /// <summary>プロセス情報の取得を試みた時刻</summary>
+    public DateTime? ProcInfoAt { get; set; }
+    public string? ProcName { get; set; }
+    public string? ProcPath { get; set; }
+    public string? ProcCommandLine { get; set; }
+    /// <summary>プロセスの実行ユーザ（DOMAIN\User）</summary>
+    public string? ProcOwner { get; set; }
+    public DateTime? ProcStartedAt { get; set; }
+    public string? ProcParentName { get; set; }
+    public string? IisAppPool { get; set; }
+    public string? IisSite { get; set; }
+
     // ---- 追跡 ----
     public DateTime FirstSeenAt { get; set; }
     public DateTime LastSeenAt { get; set; }
@@ -94,4 +115,24 @@ public static class ProcessKinds
     public const string OracleInternal = "OracleInternal";
     /// <summary>BACKGROUND セッション</summary>
     public const string Background = "Background";
+
+    /// <summary>画面に既定で表示する種別（接続アプリの特定に必要なもの）。それ以外の Oracle 内部プロセスは既定で非表示</summary>
+    public static readonly IReadOnlyList<string> Visible = [Client, DbLinkSuspect];
+}
+
+/// <summary>プロセス情報の取得状態</summary>
+public static class ProcInfoStates
+{
+    /// <summary>未取得</summary>
+    public const string Pending = "Pending";
+    /// <summary>取得済み</summary>
+    public const string Resolved = "Resolved";
+    /// <summary>問い合わせは成功したがプロセスが存在しない（終了済み）</summary>
+    public const string NotFound = "NotFound";
+    /// <summary>PID の再利用等で別プロセスと判断した</summary>
+    public const string Mismatch = "Mismatch";
+    /// <summary>接続できない・アクセス拒否など（時間をおいて再試行）</summary>
+    public const string Failed = "Failed";
+    /// <summary>対象外（PID・端末名なし、対象外端末、DB Link・Oracle 内部プロセス等）</summary>
+    public const string NotApplicable = "NotApplicable";
 }

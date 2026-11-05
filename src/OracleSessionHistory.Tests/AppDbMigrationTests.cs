@@ -71,12 +71,13 @@ public sealed class AppDbMigrationTests : IDisposable
     [Fact]
     public async Task EnsureCreatedで作成したDBはデータを残して引き継ぐ()
     {
-        // マイグレーション導入前の状態（履歴テーブル無し）
+        // マイグレーション導入前の状態（Initial 時点のスキーマ・履歴テーブル無し）
         await using (var legacy = new AppDbContext(_sqliteOptions))
         {
-            await legacy.Database.EnsureCreatedAsync();
-            legacy.Targets.Add(new MonitorTarget { Name = "既存", ConnectionString = "x" });
-            await legacy.SaveChangesAsync();
+            await CreateLegacySchemaAsync(legacy);
+            await legacy.Database.ExecuteSqlRawAsync(
+                "INSERT INTO Targets (Name, Provider, ConnectionString, IntervalSeconds, LinkIntervalSeconds, IncludeBackground, CollectSqlText, Enabled, CreatedAt, UpdatedAt, ConsecutiveFailures) " +
+                "VALUES ('既存', 'Oracle', 'x', 5, 30, 0, 1, 1, '2026-11-01 00:00:00', '2026-11-01 00:00:00', 0)");
         }
 
         await using var db = new AppDbContext(_sqliteOptions);
@@ -96,5 +97,35 @@ public sealed class AppDbMigrationTests : IDisposable
         await db.Database.ExecuteSqlRawAsync("CREATE TABLE Targets (Id INTEGER PRIMARY KEY)");
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => AppDatabase.MigrateAsync(db, NullLogger.Instance));
+    }
+    [Fact]
+    public async Task 既存のセッションはアプリ名をPROGRAMで埋めプロセス情報の取得対象外にする()
+    {
+        await using var db = new AppDbContext(_sqliteOptions);
+        var migrator = db.GetService<IMigrator>();
+        var all = db.Database.GetMigrations().ToList();
+        var before = all[all.FindIndex(m => m.EndsWith("_AddProcessInfo")) - 1];
+        await migrator.MigrateAsync(before);
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO Targets (Id, Name, Provider, ConnectionString, IntervalSeconds, LinkIntervalSeconds, IncludeBackground, CollectSqlText, Enabled, CreatedAt, UpdatedAt, ConsecutiveFailures) " +
+            "VALUES (1, 'T', 'Oracle', 'x', 5, 30, 0, 1, 1, '2026-11-01 00:00:00', '2026-11-01 00:00:00', 0)");
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO Sessions (TargetId, InstId, Sid, Serial, LogonTime, Program, ProcessKind, FirstSeenAt, LastSeenAt, IsConnected, DisconnectUncertain) VALUES " +
+            "(1, 1, 1, 1, '2026-11-01 09:00:00', 'w3wp.exe', 'Client', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 0, 0), " +
+            "(1, 1, 2, 1, '2026-11-01 09:00:00', NULL, 'Client', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 0, 0)");
+
+        await migrator.MigrateAsync();
+
+        var rows = await db.Sessions.OrderBy(s => s.Sid).ToListAsync();
+        Assert.Equal(["w3wp.exe", "(不明)"], rows.Select(r => r.AppName));
+        Assert.All(rows, r => Assert.Equal(ProcInfoStates.NotApplicable, r.ProcInfoState));
+    }
+
+    /// <summary>マイグレーション導入前（EnsureCreated）の DB を再現する：Initial のスキーマを作り、履歴テーブルを消す</summary>
+    private static async Task CreateLegacySchemaAsync(AppDbContext db)
+    {
+        var initial = db.Database.GetMigrations().First(m => m.EndsWith("_" + AppDatabase.InitialMigrationName));
+        await db.GetService<IMigrator>().MigrateAsync(initial);
+        await db.Database.ExecuteSqlRawAsync("DROP TABLE __EFMigrationsHistory");
     }
 }

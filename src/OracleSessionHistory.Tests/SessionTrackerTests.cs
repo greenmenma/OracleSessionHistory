@@ -146,4 +146,42 @@ public class SessionTrackerTests
         Assert.Equal("PURGE_LOG", row.JobName);
         Assert.Equal("SCHEDULER", row.JobType);
     }
+    [Fact]
+    public void 新規のクライアント行はプロセス情報未取得でアプリ名はPROGRAM()
+    {
+        var row = SessionTracker.Apply(1, [], Snap(T0, Obs(1, program: "w3wp.exe")), null, Interval).Added.Single();
+        Assert.Equal(ProcInfoStates.Pending, row.ProcInfoState);
+        Assert.Equal("w3wp.exe", row.AppName);
+    }
+
+    [Fact]
+    public void DbLinkの可能性の行はプロセス情報の対象外()
+    {
+        var row = SessionTracker.Apply(1, [], Snap(T0, Obs(1, program: "ORACLE.EXE")), null, Interval).Added.Single();
+        Assert.Equal(ProcInfoStates.NotApplicable, row.ProcInfoState);
+        Assert.Equal("ORACLE.EXE", row.AppName);
+    }
+
+    [Fact]
+    public void プロセス情報で確定したアプリ名は再観測で上書きしない()
+    {
+        var row = SessionTracker.Apply(1, [], Snap(T0, Obs(1, program: "w3wp.exe")), null, Interval).Added.Single();
+        row.ProcInfoState = ProcInfoStates.Resolved;
+        row.AppName = "IIS: Foo";
+        row.AppDetail = "Default Web Site/foo";
+
+        SessionTracker.Apply(1, [row], Snap(T0.AddSeconds(5), Obs(1, program: "w3wp.exe")), T0, Interval);
+
+        Assert.Equal("IIS: Foo", row.AppName);
+        Assert.Equal("Default Web Site/foo", row.AppDetail);
+        Assert.Equal(ProcInfoStates.Resolved, row.ProcInfoState);
+    }
+
+    [Fact]
+    public void 未確定のアプリ名はモジュールの変化に追従する()
+    {
+        var row = SessionTracker.Apply(1, [], Snap(T0, Obs(1, program: "販売.exe")), null, Interval).Added.Single();
+        SessionTracker.Apply(1, [row], Snap(T0.AddSeconds(5), Obs(1, program: "販売.exe") with { Module = "受注入力" }), T0, Interval);
+        Assert.Equal("受注入力", row.AppDetail);
+    }
 }
