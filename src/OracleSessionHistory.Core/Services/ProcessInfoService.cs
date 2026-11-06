@@ -285,9 +285,9 @@ public sealed class ProcessInfoService(
     private async Task<HostResult> InspectHostAsync(IProcessInspector inspector, string host, IReadOnlyCollection<int> pids,
         ProcessInspectorOptions options, CancellationToken ct)
     {
-        // 取得元がタイムアウトを守らない場合に備え、ホスト単位でも打ち切る（WinRM → DCOM の 2 回分＋余裕）
+        // 取得元がタイムアウトを守らない場合に備え、ホスト単位でも打ち切る（接続と問い合わせの分＋余裕）
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(options.Timeout * 3);
+        cts.CancelAfter(options.Timeout * 2);
         Task<IReadOnlyList<ClientProcessInfo>>? task = null;
         try
         {

@@ -61,7 +61,7 @@ export default function SessionDetailPanel({ id, onClose }: { id: number; onClos
             </dl>
             {s.procInfoState === 'Failed' && (
               <p className="muted">
-                接続元サーバーに WMI（WinRM / DCOM）で接続できませんでした。<a href="#/settings">設定</a>
+                接続元サーバーに WMI（DCOM）で接続できませんでした。<a href="#/settings">設定</a>
                 の「プロセス情報の取得」でアカウントと接続テストを確認してください。時間をおいて自動で再試行します。
               </p>
             )}
