@@ -151,13 +151,13 @@ public sealed class ApiQueryTests : IDisposable
     }
 
     private void AddSql(string machine, string program, string app, DateTime logon, string? origin = null, string? originApp = null,
-        string? source = null)
+        string? source = null, string? user = null, string? originUser = null)
     {
         _db.Sessions.Add(new TrackedSession
         {
             TargetId = _targetId, InstId = 1, Sid = ++_sid, Serial = 1, LogonTime = logon, Machine = machine, Program = program,
             AppName = app, ProcessKind = originApp is null && program != "ORACLE.EXE" ? ProcessKinds.Client : ProcessKinds.DbLinkSuspect,
-            LinkOriginMachine = origin, LinkOriginApp = originApp, LinkOriginSource = source,
+            LinkOriginMachine = origin, LinkOriginApp = originApp, LinkOriginSource = source, OsUser = user, LinkOriginUser = originUser,
             FirstSeenAt = logon, LastSeenAt = logon.AddMinutes(1),
         });
         _db.SaveChanges();
@@ -188,6 +188,24 @@ public sealed class ApiQueryTests : IDisposable
         Assert.Equal(["cmd.exe", "日次.bat", "(実行元不明)"], Find(nodes, "APP01", "sqlplus.exe").Children.Select(c => c.Label));
         Assert.Empty(Find(nodes, "APP01", "販売管理.exe").Children);
         Assert.Equal("IIS: Pool1", Find(nodes, "APP01", "w3wp.exe", "Pool1").Open!["app"]);
+    }
+
+    [Fact]
+    public async Task 実行ユーザはすべての段に出しDBLink経由は接続元の実行ユーザにする()
+    {
+        var t = Today.AddHours(9);
+        AddSql("APP01", "sqlplus.exe", "sqlplus.exe: 日次.bat", t, user: @"CORP\batch");
+        AddSql("APP01", "sqlplus.exe", "sqlplus.exe: 日次.bat", t, user: @"corp\BATCH"); // 大文字小文字の違いはまとめる
+        AddSql("APP01", "sqlplus.exe", "sqlplus.exe: cmd.exe", t, user: @"CORP\ope01");
+        AddSql("KIKAN-DB01", "ORACLE.EXE", "ORACLE.EXE", t, "KIKAN-AP01", "在庫照会.exe", "基幹DB", user: "SYSTEM", originUser: @"CORP\yamada");
+
+        var (nodes, _) = await ReportEndpoints.QueryConnectionTreeAsync(_db, null, null, Today, default);
+
+        Assert.Equal([@"CORP\batch", @"CORP\ope01"], Find(nodes, "APP01").Owners); // 多い順
+        Assert.Equal([@"CORP\batch", @"CORP\ope01"], Find(nodes, "APP01", "sqlplus.exe").Owners);
+        Assert.Equal([@"CORP\batch"], Find(nodes, "APP01", "sqlplus.exe", "日次.bat").Owners);
+        Assert.Equal([@"CORP\yamada"], Find(nodes, "KIKAN-DB01", "ORACLE.EXE", "基幹DB", "KIKAN-AP01").Owners);
+        Assert.Equal([@"CORP\yamada"], Find(nodes, "KIKAN-DB01", "ORACLE.EXE", "基幹DB", "KIKAN-AP01", "在庫照会.exe").Owners);
     }
 
     [Fact]
@@ -256,7 +274,7 @@ public sealed class ApiQueryTests : IDisposable
         var foo = Find(nodes, "WEB01", "w3wp.exe", "Foo");
         Assert.Equal((1, 1, 2, 1), (foo.Today, foo.D1, foo.Month1, foo.Connected));
         Assert.Equal("Default Web Site/foo", foo.Detail);
-        Assert.Equal(@"IIS APPPOOL\Foo", foo.Owner);
+        Assert.Equal([@"IIS APPPOOL\Foo"], foo.Owners);
     }
 
     private void SetAudit(DateTime from, DateTime to, params (DateTime Day, string Machine, int Count)[] rows)

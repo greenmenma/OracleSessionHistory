@@ -3,7 +3,7 @@ import { api, type ConnectionCountNode, type PeriodCounts } from '../api'
 import { useAsync } from '../hooks'
 import { fmtDate, fmtDateTime } from '../format'
 import { navigate } from '../router'
-import UserName from '../components/UserName'
+import { UserList } from '../components/UserName'
 
 type CountKey = keyof PeriodCounts
 
@@ -69,7 +69,7 @@ export default function CountsPage({ targetId }: { targetId?: number }) {
           </div>
         </td>
         <td className="nowrap">
-          <UserName account={n.owner} />
+          <UserList accounts={n.owners} />
         </td>
         <td className={`num ${n.connected === 0 ? 'zero' : ''}`}>{n.connected}</td>
         <td className="nowrap">{fmtDateTime(n.lastSeenAt)}</td>

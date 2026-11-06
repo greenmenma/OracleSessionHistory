@@ -89,6 +89,8 @@ export interface SessionListItem {
   /** DB Link の可能性があるセッションで、接続元 DB 上で特定できた利用元のアプリ・端末 */
   linkOriginApp: string | null
   linkOriginMachine: string | null
+  /** DB Link 経由で特定した接続元の実行ユーザ */
+  linkOriginUser: string | null
 }
 
 /** プロセス情報の取得状態 */
@@ -235,7 +237,8 @@ export interface ConnectionCountNode extends PeriodCounts {
   label: string
   /** 補足（IIS のサイト・フォルダ・DB Link の接続元の端末等） */
   detail: string | null
-  owner: string | null
+  /** 実行ユーザ（ログオンの多い順。DB Link 経由は接続元の実行ユーザ） */
+  owners: string[]
   connected: number
   lastSeenAt: string | null
   /** 監査証跡（DBA_AUDIT_SESSION）の件数を使った列（端末の行のみ） */

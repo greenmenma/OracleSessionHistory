@@ -292,7 +292,13 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
                     {s.linkOriginApp && (
                       <div className="link-origin" title="接続元 DB 上で DB Link を使っていたセッションのアプリ">
                         DB Link 経由: <strong>{s.linkOriginApp}</strong>
-                        {s.linkOriginMachine && <>（{s.linkOriginMachine}）</>}
+                        {(s.linkOriginMachine || s.linkOriginUser) && (
+                          <>
+                            （{s.linkOriginMachine}
+                            {s.linkOriginMachine && s.linkOriginUser && '・'}
+                            <UserName account={s.linkOriginUser} />）
+                          </>
+                        )}
                       </div>
                     )}
                   </td>

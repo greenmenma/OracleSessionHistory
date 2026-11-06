@@ -140,7 +140,8 @@ public sealed class CollectionServiceTests : IDisposable
         Assert.All(usages, u => Assert.Equal(sessionId, u.MatchedSessionId));
         Assert.All(usages, u => Assert.Equal(2, u.HitCount));
         var session = await db2.Sessions.SingleAsync();
-        Assert.Equal(("KIKAN-AP01", "受注入力.exe", "基幹DB"), (session.LinkOriginMachine, session.LinkOriginApp, session.LinkOriginSource));
+        Assert.Equal(("KIKAN-AP01", "受注入力.exe", "基幹DB", "yamada"),
+            (session.LinkOriginMachine, session.LinkOriginApp, session.LinkOriginSource, session.LinkOriginUser));
     }
 
     [Fact]
@@ -410,6 +411,7 @@ public sealed class CollectionServiceTests : IDisposable
                 DbLinkName = DbLinkMatchTypes.ProcessOnlyLinkName, MatchType = DbLinkMatchTypes.Process,
                 InstId = 1, Sid = 77, Serial = 7, LogonTime = new DateTime(2026, 11, 4, 8, 0, 0),
                 Machine = "KIKAN-AP01", Program = "受注入力.exe", Module = "受注", ServerProcess = ServerProcess, ClientProcess = "5120:88",
+                OsUser = "yamada",
             };
             List<ObservedLinkUsage> list = [u];
             if (source.SelectedLinks.Count > 0)

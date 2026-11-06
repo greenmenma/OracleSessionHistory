@@ -24,8 +24,9 @@ public sealed record NameCount(string Name, int Count);
 /// <param name="Detail">補足（IIS のサイト・フォルダ・DB Link の接続元の端末等）</param>
 /// <param name="AuditPeriods">監査証跡の件数を使った列（端末の行のみ。today・d1〜d6・month1・month2）</param>
 /// <param name="Open">クリックで開くセッション履歴の検索条件（null は開かない）</param>
+/// <param name="Owners">実行ユーザ（ログオンの多い順。DB Link 経由は接続元の実行ユーザ）</param>
 public sealed record ConnectionCountNode(
-    string Kind, string Label, string? Detail, string? Owner, int Connected, DateTime? LastSeenAt,
+    string Kind, string Label, string? Detail, IReadOnlyList<string> Owners, int Connected, DateTime? LastSeenAt,
     int Today, int D1, int D2, int D3, int D4, int D5, int D6, int Month1, int Month2,
     IReadOnlyList<string> AuditPeriods, IReadOnlyDictionary<string, string>? Open, IReadOnlyList<ConnectionCountNode> Children);
 
@@ -180,7 +181,7 @@ public static class ReportEndpoints
                           ?? history.Select(h => h.Machine).FirstOrDefault(m => !string.IsNullOrEmpty(m))
                           ?? audits.Select(a => a.Machine).FirstOrDefault(m => !string.IsNullOrEmpty(m));
             var host = string.IsNullOrEmpty(machine) ? SessionEndpoints.UnknownMachine : machine;
-            nodes.Add(new ConnectionCountNode(ConnectionCountKinds.Machine, machine ?? SessionEndpoints.UnknownMachine, null, null,
+            nodes.Add(new ConnectionCountNode(ConnectionCountKinds.Machine, machine ?? SessionEndpoints.UnknownMachine, null, OwnersOf(rows),
                 rows.Sum(r => r.Connected), rows.Count > 0 ? rows.Max(r => r.LastSeenAt) : null,
                 v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], auditPeriods,
                 new Dictionary<string, string> { ["host"] = host }, ExeNodes(rows, host)));
@@ -214,7 +215,7 @@ public static class ReportEndpoints
             {
                 var linked = l.ToList();
                 var open = Open(("host", host), ("via", host), ("linkSource", l.Key));
-                children.Add(Node(ConnectionCountKinds.DbLink, l.Key, null, null, linked, open, OriginMachineNodes(linked, open)));
+                children.Add(Node(ConnectionCountKinds.DbLink, l.Key, null, linked, open, OriginMachineNodes(linked, open)));
             }
             // 区別できないもの（プール・実行元・接続元を特定できていない）。他に下の段がある場合だけ別の行にする
             var rest = direct.Where(r => AppIdentifier.SplitForTree(r.Program, r.AppName).Sub is null).ToList();
@@ -226,7 +227,7 @@ public static class ReportEndpoints
                 : Open(("host", host), ("via", SessionEndpoints.DirectVia), ("exe", exe));
             list.Add(children.Count == 0
                 ? Leaf(ConnectionCountKinds.Exe, exe, all, exeOpen)
-                : Node(ConnectionCountKinds.Exe, exe, null, null, all, exeOpen, Sort(children)));
+                : Node(ConnectionCountKinds.Exe, exe, null, all, exeOpen, Sort(children)));
         }
         return Sort(list);
     }
@@ -241,7 +242,7 @@ public static class ReportEndpoints
             var machine = all.Select(r => r.OriginMachine).FirstOrDefault(m => !string.IsNullOrEmpty(m));
             var origin = string.IsNullOrEmpty(machine) ? SessionEndpoints.UnknownMachine : machine;
             var open = With(linkOpen, ("origin", origin));
-            list.Add(Node(ConnectionCountKinds.Machine, origin, null, null, all, open, OriginExeNodes(all, open)));
+            list.Add(Node(ConnectionCountKinds.Machine, origin, null, all, open, OriginExeNodes(all, open)));
         }
         return Sort(list);
     }
@@ -258,16 +259,16 @@ public static class ReportEndpoints
                          .Where(x => x.Sub is not null).GroupBy(x => x.Sub!, StringComparer.OrdinalIgnoreCase))
             {
                 var sub = s.Select(x => x.Row).ToList();
-                children.Add(Node(ConnectionCountKinds.App, s.Key, null, null, sub, With(originOpen, ("app", sub[0].OriginApp!), ("exact", "true")), []));
+                children.Add(Node(ConnectionCountKinds.App, s.Key, null, sub, With(originOpen, ("app", sub[0].OriginApp!), ("exact", "true")), []));
             }
             var rest = all.Where(r => AppIdentifier.SplitForTree(null, r.OriginApp!).Sub is null).ToList();
             if (children.Count > 0 && rest.Count > 0)
-                children.Add(Node(ConnectionCountKinds.Other, RestLabel(g.Key), null, null, rest,
+                children.Add(Node(ConnectionCountKinds.Other, RestLabel(g.Key), null, rest,
                     With(originOpen, ("app", rest[0].OriginApp!), ("exact", "true")), []));
             // 下の段がある実行ファイルは、w3wp.exe なら「IIS: 」、それ以外は実行ファイル名の部分一致で接続元のアプリを探す
             var open = children.Count == 0 ? With(originOpen, ("app", all[0].OriginApp!), ("exact", "true"))
                 : With(originOpen, ("app", g.Key.Equals("w3wp.exe", StringComparison.OrdinalIgnoreCase) ? "IIS: " : g.Key));
-            list.Add(Node(ConnectionCountKinds.Exe, g.Key, null, null, all, open, Sort(children)));
+            list.Add(Node(ConnectionCountKinds.Exe, g.Key, null, all, open, Sort(children)));
         }
         return Sort(list);
     }
@@ -283,12 +284,18 @@ public static class ReportEndpoints
         _ => "(区別なし)",
     };
 
-    /// <summary>下の段の無い行（補足・実行ユーザは代表値）</summary>
+    /// <summary>下の段の無い行（補足は代表値）</summary>
     private static ConnectionCountNode Leaf(string kind, string label, List<ConnectionCountRaw> rows, IReadOnlyDictionary<string, string>? open) =>
-        Node(kind, label, rows.Select(r => r.AppDetail).FirstOrDefault(d => d is not null),
-            rows.Select(r => r.Owner).FirstOrDefault(o => o is not null), rows, open, []);
+        Node(kind, label, rows.Select(r => r.AppDetail).FirstOrDefault(d => d is not null), rows, open, []);
 
-    private static ConnectionCountNode Node(string kind, string label, string? detail, string? owner, List<ConnectionCountRaw> rows,
+    /// <summary>実行ユーザ（大文字小文字の違いはまとめる）。ログオンの多い順</summary>
+    private static List<string> OwnersOf(IEnumerable<ConnectionCountRaw> rows) =>
+        rows.Where(r => !string.IsNullOrWhiteSpace(r.Owner))
+            .GroupBy(r => r.Owner!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(g => g.Sum(r => r.Month1 + r.Month2)).ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.Key).ToList();
+
+    private static ConnectionCountNode Node(string kind, string label, string? detail, List<ConnectionCountRaw> rows,
         IReadOnlyDictionary<string, string>? open, IReadOnlyList<ConnectionCountNode> children)
     {
         var v = new int[9];
@@ -297,7 +304,7 @@ public static class ReportEndpoints
             var c = r.Counts;
             for (var i = 0; i < v.Length; i++) v[i] += c[i];
         }
-        return new ConnectionCountNode(kind, label, detail, owner, rows.Sum(r => r.Connected), rows.Max(r => r.LastSeenAt),
+        return new ConnectionCountNode(kind, label, detail, OwnersOf(rows), rows.Sum(r => r.Connected), rows.Max(r => r.LastSeenAt),
             v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], [], open, children);
     }
 
@@ -340,11 +347,13 @@ public static class ReportEndpoints
                 LinkSource = s.LinkOriginApp != null ? s.LinkOriginSource : null,
                 OriginMachine = s.LinkOriginApp != null ? s.LinkOriginMachine : null,
                 s.LinkOriginApp,
+                // 実行ユーザ。DB Link 経由は接続元の実行ユーザ（DB サーバー側の OSUSER ではない）
+                Owner = s.LinkOriginApp != null ? s.LinkOriginUser : s.ProcOwner ?? s.OsUser,
             })
             .Select(gr => new ConnectionCountRaw(
                 gr.Key.Machine, gr.Key.Program, gr.Key.AppName, gr.Key.LinkSource, gr.Key.OriginMachine, gr.Key.LinkOriginApp,
-                // 代表値（同じアプリでも補足・実行ユーザが複数ある場合は 1 つだけ表示する）
-                gr.Max(s => s.AppDetail), gr.Max(s => s.ProcOwner ?? s.OsUser),
+                // 補足は代表値（同じアプリでも補足が複数ある場合は 1 つだけ表示する）
+                gr.Max(s => s.AppDetail), gr.Key.Owner,
                 gr.Sum(s => s.IsConnected ? 1 : 0), gr.Max(s => s.LastSeenAt),
                 gr.Sum(s => s.LogonTime >= b.Today ? 1 : 0),
                 gr.Sum(s => s.LogonTime >= b.D1 && s.LogonTime < b.Today ? 1 : 0),

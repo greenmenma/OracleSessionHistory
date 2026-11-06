@@ -11,7 +11,7 @@ public sealed record SessionListItem(
     string? Status, string ProcessKind, string? JobName, bool IsConnected, DateTime FirstSeenAt, DateTime LastSeenAt,
     DateTime? DisconnectedAt, bool DisconnectUncertain, int DbLinkOriginCount,
     string AppName, string? AppDetail, string? ProcOwner, string ProcInfoState, string? ProcInfoError,
-    string? LinkOriginApp = null, string? LinkOriginMachine = null);
+    string? LinkOriginApp = null, string? LinkOriginMachine = null, string? LinkOriginUser = null);
 
 public sealed record SessionSearch(
     int? TargetId, string? State, string? Q, string? Machine, string? Program, string? Username, string? OsUser,
@@ -37,7 +37,7 @@ public static class SessionEndpoints
             x.DisconnectedAt, x.DisconnectUncertain, x.DbLinkOrigins.Count,
             x.AppName, x.AppDetail, x.ProcOwner, x.ProcInfoState, x.ProcInfoError,
             // DB Link の可能性があるセッションは、特定できた接続元（最後に観測したもの）のアプリを一覧に出す
-            x.LinkOriginApp, x.LinkOriginMachine));
+            x.LinkOriginApp, x.LinkOriginMachine, x.LinkOriginUser));
 
     public static void MapSessionEndpoints(this IEndpointRouteBuilder app)
     {
