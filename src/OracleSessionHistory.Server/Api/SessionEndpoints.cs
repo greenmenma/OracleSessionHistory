@@ -17,7 +17,7 @@ public sealed record SessionSearch(
     int? TargetId, string? State, string? Q, string? Machine, string? Program, string? Username, string? OsUser,
     string? Kind, DateTime? From, DateTime? To, int Page = 1, int PageSize = 50,
     string? App = null, bool IncludeInternal = false, bool Exact = false, string? Via = null,
-    string? Host = null, string? LinkSource = null);
+    string? Host = null, string? LinkSource = null, string? Origin = null);
 
 /// <summary>セッション履歴の検索 API</summary>
 public static class SessionEndpoints
@@ -45,7 +45,7 @@ public static class SessionEndpoints
 
         g.MapGet("/sessions", async ([AsParameters] SessionSearch s, AppDbContext db) =>
         {
-            var q = Filter(db.Sessions.AsNoTracking(), s);
+            var q = Filter(db.Sessions.AsNoTracking(), s, db.DirectoryUsers);
             var pageSize = Math.Clamp(s.PageSize, 1, 500);
             var page = Math.Max(1, s.Page);
             var total = await q.CountAsync();
@@ -56,6 +56,11 @@ public static class SessionEndpoints
                 .ToListAsync();
             return new PagedResult<SessionListItem>(items, total, page, pageSize);
         });
+
+        // 実行ユーザの表示名（AD の displayName）。画面はアカウントの代わりに表示名を出す（キーはアカウントを大文字にした値）
+        g.MapGet("/user-names", async (AppDbContext db, CancellationToken ct) =>
+            await db.DirectoryUsers.AsNoTracking().Where(d => d.Found && d.DisplayName != null)
+                .ToDictionaryAsync(d => d.Account, d => d.DisplayName!, ct));
 
         g.MapGet("/sessions/{id:long}", async (long id, AppDbContext db) =>
         {
@@ -88,8 +93,13 @@ public static class SessionEndpoints
         });
     }
 
-    internal static IQueryable<TrackedSession> Filter(IQueryable<TrackedSession> q, SessionSearch s)
+    /// <param name="users">実行ユーザの表示名（AD）。指定するとキーワード・実行ユーザの条件で表示名も探す</param>
+    internal static IQueryable<TrackedSession> Filter(IQueryable<TrackedSession> q, SessionSearch s, IQueryable<DirectoryUser>? users = null)
     {
+        // 表示名が一致するアカウント（アカウントは大文字で保存している）。表示名を使わない場合は空の副問い合わせ
+        var none = q.Where(x => false).Select(x => "");
+        IQueryable<string> NamedAccounts(string pattern) =>
+            users?.Where(d => d.Found && EF.Functions.Like(d.DisplayName, pattern, "\\")).Select(d => d.Account) ?? none;
         if (s.TargetId is { } tid) q = q.Where(x => x.TargetId == tid);
         q = s.State switch
         {
@@ -100,6 +110,7 @@ public static class SessionEndpoints
         if (!string.IsNullOrWhiteSpace(s.Q))
         {
             var p = QueryHelpers.Contains(s.Q.Trim());
+            var named = NamedAccounts(p);
             q = q.Where(x =>
                 EF.Functions.Like(x.Machine, p, "\\") || EF.Functions.Like(x.Program, p, "\\") ||
                 EF.Functions.Like(x.Username, p, "\\") || EF.Functions.Like(x.SchemaName, p, "\\") ||
@@ -110,7 +121,8 @@ public static class SessionEndpoints
                 EF.Functions.Like(x.AppDetail, p, "\\") || EF.Functions.Like(x.ProcPath, p, "\\") ||
                 EF.Functions.Like(x.ProcCommandLine, p, "\\") || EF.Functions.Like(x.ProcOwner, p, "\\") ||
                 EF.Functions.Like(x.ProcAncestry, p, "\\") ||
-                EF.Functions.Like(x.LinkOriginMachine, p, "\\") || EF.Functions.Like(x.LinkOriginApp, p, "\\"));
+                EF.Functions.Like(x.LinkOriginMachine, p, "\\") || EF.Functions.Like(x.LinkOriginApp, p, "\\") ||
+                named.Contains(x.OsUser!.Trim().ToUpper()) || named.Contains(x.ProcOwner!.Trim().ToUpper()));
         }
         // 端末・アプリは、DB Link 経由で接続元を特定できた行（LinkOriginApp あり）は接続元の端末・アプリで探す（接続アプリ表と同じまとめ方）
         if (!string.IsNullOrWhiteSpace(s.Machine))
@@ -145,6 +157,13 @@ public static class SessionEndpoints
             q = source == UnknownMachine ? q.Where(x => x.LinkOriginApp != null && x.LinkOriginSource == null)
                 : q.Where(x => x.LinkOriginApp != null && x.LinkOriginSource == source);
         }
+        // DB Link 経由で特定した接続元の端末（接続アプリ表の DB Link の下の端末）
+        if (!string.IsNullOrWhiteSpace(s.Origin))
+        {
+            var origin = s.Origin.Trim();
+            q = origin == UnknownMachine ? q.Where(x => x.LinkOriginApp != null && (x.LinkOriginMachine == null || x.LinkOriginMachine == ""))
+                : q.Where(x => x.LinkOriginApp != null && x.LinkOriginMachine == origin);
+        }
         // 経由：接続アプリ表の親子の行から遷移した場合。直接の接続だけ、または特定の DB サーバーを経由した DB Link 経由の接続だけにする
         if (!string.IsNullOrWhiteSpace(s.Via))
         {
@@ -158,7 +177,9 @@ public static class SessionEndpoints
         if (!string.IsNullOrWhiteSpace(s.OsUser))
         {
             var p = QueryHelpers.Contains(s.OsUser.Trim());
-            q = q.Where(x => EF.Functions.Like(x.OsUser, p, "\\") || EF.Functions.Like(x.ProcOwner, p, "\\"));
+            var named = NamedAccounts(p);
+            q = q.Where(x => EF.Functions.Like(x.OsUser, p, "\\") || EF.Functions.Like(x.ProcOwner, p, "\\")
+                             || named.Contains(x.OsUser!.Trim().ToUpper()) || named.Contains(x.ProcOwner!.Trim().ToUpper()));
         }
         if (!string.IsNullOrWhiteSpace(s.App))
         {

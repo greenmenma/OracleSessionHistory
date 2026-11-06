@@ -16,6 +16,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<DbLinkUsage> DbLinkUsages => Set<DbLinkUsage>();
     public DbSet<ProcessInspectionSettings> ProcessInspectionSettings => Set<ProcessInspectionSettings>();
     public DbSet<AuditLogonCount> AuditLogonCounts => Set<AuditLogonCount>();
+    public DbSet<DirectoryUser> DirectoryUsers => Set<DirectoryUser>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -57,6 +58,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.TargetId, x.Day, x.Machine }).IsUnique();
             e.Property(x => x.Machine).HasMaxLength(256);
             e.HasOne(x => x.Target).WithMany().HasForeignKey(x => x.TargetId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<DirectoryUser>(e =>
+        {
+            e.HasKey(x => x.Account);
+            e.Property(x => x.Account).HasMaxLength(256);
+            e.Property(x => x.DisplayName).HasMaxLength(256);
+            e.HasIndex(x => x.DisplayName);
         });
 
         b.Entity<ProcessInspectionSettings>(e =>

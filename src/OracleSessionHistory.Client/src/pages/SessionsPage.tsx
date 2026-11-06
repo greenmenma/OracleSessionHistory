@@ -6,6 +6,7 @@ import SessionDetailPanel from '../components/SessionDetailPanel'
 import KindBadge from '../components/KindBadge'
 import Pager from '../components/Pager'
 import AppCell from '../components/AppCell'
+import UserName from '../components/UserName'
 import { replaceQuery } from '../router'
 
 interface Filters {
@@ -30,6 +31,8 @@ interface Filters {
   exe: string
   /** 接続アプリ表の行からの遷移：DB Link 接続元の名前 */
   linkSource: string
+  /** 接続アプリ表の行からの遷移：DB Link 経由で特定した接続元の端末 */
+  origin: string
 }
 
 type BoolKey = 'includeInternal' | 'exact'
@@ -59,11 +62,12 @@ function fromQuery(query: URLSearchParams): Filters {
     host: query.get('host') ?? '',
     exe: query.get('exe') ?? '',
     linkSource: query.get('linkSource') ?? '',
+    origin: query.get('origin') ?? '',
   }
 }
 
 /** 接続アプリ表の行から渡された条件（画面に入力欄は無く、バッジで表示する） */
-const treeKeys = ['host', 'exe', 'via', 'linkSource'] as const
+const treeKeys = ['host', 'exe', 'via', 'linkSource', 'origin'] as const
 
 function treeLabels(f: Filters): string[] {
   const labels: string[] = []
@@ -71,6 +75,7 @@ function treeLabels(f: Filters): string[] {
   if (f.exe) labels.push(`実行ファイル ${f.exe}`)
   if (f.via) labels.push(viaLabel(f.via))
   if (f.linkSource) labels.push(`DB Link 接続元 ${f.linkSource}`)
+  if (f.origin) labels.push(`接続元の端末 ${f.origin}`)
   return labels
 }
 
@@ -131,7 +136,7 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
   const set = (k: Exclude<keyof Filters, BoolKey>) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     // 接続アプリから開いた（完全一致の）状態で端末・アプリを書き換えたら、部分一致で探したいものとして完全一致を外す
     // 経由の条件も、接続アプリの行に合わせたものなので外す
-    setForm({ ...form, [k]: e.target.value, ...(k === 'machine' || k === 'app' ? { exact: false, via: '', host: '', exe: '', linkSource: '' } : {}) })
+    setForm({ ...form, [k]: e.target.value, ...(k === 'machine' || k === 'app' ? { exact: false, via: '', host: '', exe: '', linkSource: '', origin: '' } : {}) })
 
   const search = (e: React.FormEvent) => {
     e.preventDefault()
@@ -186,7 +191,7 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
         <input placeholder="実行端末" value={form.machine} onChange={set('machine')} />
         <input placeholder="アプリ" value={form.app} onChange={set('app')} />
         <input placeholder="接続ユーザ" value={form.username} onChange={set('username')} />
-        <input placeholder="実行ユーザ" value={form.osUser} onChange={set('osUser')} />
+        <input placeholder="実行ユーザ（アカウント・表示名）" value={form.osUser} onChange={set('osUser')} />
         <label className="inline">
           期間
           <input type="datetime-local" value={form.from} onChange={set('from')} />〜
@@ -291,7 +296,9 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
                       </div>
                     )}
                   </td>
-                  <td className="nowrap">{s.procOwner ?? s.osUser}</td>
+                  <td className="nowrap">
+                    <UserName account={s.procOwner ?? s.osUser} />
+                  </td>
                   <td className="nowrap">
                     {s.username}
                     {s.schemaName && s.schemaName !== s.username && <div className="sub">スキーマ {s.schemaName}</div>}

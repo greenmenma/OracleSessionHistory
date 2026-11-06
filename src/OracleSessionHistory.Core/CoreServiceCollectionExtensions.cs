@@ -7,6 +7,7 @@ using OracleSessionHistory.Core.Data;
 using OracleSessionHistory.Core.DbLinks;
 using OracleSessionHistory.Core.Processes;
 using OracleSessionHistory.Core.Services;
+using OracleSessionHistory.Core.Users;
 
 namespace OracleSessionHistory.Core;
 
@@ -36,6 +37,13 @@ public static class CoreServiceCollectionExtensions
             sp.GetRequiredService<CimProcessInspector>(), sp.GetRequiredService<DemoProcessInspector>()));
         services.AddSingleton<HostBackoff>();
         services.AddSingleton<ProcessInfoService>();
+
+        // 実行ユーザの表示名（AD）。Windows 以外（デバッグ）はデモの疑似ディレクトリ
+        services.AddSingleton<AdUserDirectory>();
+        services.AddSingleton<IUserDirectory>(sp => OperatingSystem.IsWindows()
+            ? sp.GetRequiredService<AdUserDirectory>()
+            : new DemoUserDirectory());
+        services.AddSingleton<UserNameService>();
 
         services.AddSingleton<CollectionService>();
         return services;

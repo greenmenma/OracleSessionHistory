@@ -1,10 +1,12 @@
 import { api, type DbLinkUsage } from '../api'
 import { useAsync } from '../hooks'
 import { fmtDateTime, fmtDuration, kindLabels, matchTypeLabels, procInfoLabels } from '../format'
+import { userLabel, useUserNames } from './UserName'
 
 export default function SessionDetailPanel({ id, onClose }: { id: number; onClose: () => void }) {
   const { data, error } = useAsync(() => api.session(id), [id], 10000)
   const s = data?.session
+  const names = useUserNames()
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
@@ -55,7 +57,7 @@ export default function SessionDetailPanel({ id, onClose }: { id: number; onClos
                   <Prop label="プロセス名" value={s.procName} />
                   <Prop label="実行ファイル" value={s.procPath} />
                   <Prop label="コマンドライン" value={s.procCommandLine} pre />
-                  <Prop label="実行ユーザ" value={s.procOwner} />
+                  <Prop label="実行ユーザ" value={userLabel(names, s.procOwner)} />
                   <Prop label="プロセス開始" value={fmtDateTime(s.procStartedAt)} />
                   <Prop label="親プロセス" value={s.procParentName} />
                   <Prop label="実行元" value={s.procAncestry} pre />
@@ -76,7 +78,7 @@ export default function SessionDetailPanel({ id, onClose }: { id: number; onClos
               <Prop label="実行プログラム (PROGRAM)" value={s.program} />
               <Prop label="接続ユーザ (USERNAME)" value={s.username} />
               <Prop label="実行スキーマ (SCHEMANAME)" value={s.schemaName} />
-              <Prop label="実行ユーザ (OSUSER)" value={s.osUser} />
+              <Prop label="実行ユーザ (OSUSER)" value={userLabel(names, s.osUser)} />
               <Prop label="モジュール (MODULE)" value={s.module} />
               <Prop label="アクション (ACTION)" value={s.action} />
               <Prop label="CLIENT_INFO" value={s.clientInfo} />
@@ -146,6 +148,7 @@ function Prop({ label, value, pre }: { label: string; value?: string | null; pre
 }
 
 function UsageList({ title, items }: { title: string; items: DbLinkUsage[] }) {
+  const names = useUserNames()
   return (
     <div className="usage-list">
       <h4>{title}</h4>
@@ -160,7 +163,7 @@ function UsageList({ title, items }: { title: string; items: DbLinkUsage[] }) {
           {u.appDetail && <div className="muted small">{u.appDetail}</div>}
           {u.procPath && u.procPath !== u.appDetail && <div className="muted small mono">{u.procPath}</div>}
           <div className="muted">
-            ユーザ {u.username}（OS: {u.procOwner ?? u.osUser}）・PROGRAM {u.program}・{u.linkSourceName} ・ {u.dbLinkName} ・{' '}
+            ユーザ {u.username}（OS: {userLabel(names, u.procOwner ?? u.osUser)}）・PROGRAM {u.program}・{u.linkSourceName} ・ {u.dbLinkName} ・{' '}
             {matchTypeLabels[u.matchType] ?? u.matchType}
           </div>
           {u.sqlText && <pre className="sql small">{u.sqlText}</pre>}

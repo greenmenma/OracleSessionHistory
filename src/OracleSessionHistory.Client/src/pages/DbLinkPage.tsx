@@ -5,6 +5,7 @@ import { fmtDateTime, matchTypeLabels } from '../format'
 import Pager from '../components/Pager'
 import SessionDetailPanel from '../components/SessionDetailPanel'
 import AppCell from '../components/AppCell'
+import UserName from '../components/UserName'
 
 export default function DbLinkPage({ targetId }: { targetId?: number }) {
   const [input, setInput] = useState('')
@@ -77,7 +78,9 @@ export default function DbLinkPage({ targetId }: { targetId?: number }) {
                       </div>
                     )}
                   </td>
-                  <td className="nowrap">{u.procOwner ?? u.osUser}</td>
+                  <td className="nowrap">
+                    <UserName account={u.procOwner ?? u.osUser} />
+                  </td>
                   <td>{u.username}</td>
                   <td className="nowrap">{fmtDateTime(u.logonTime)}</td>
                   <td className="ellipsis mono" title={u.sqlText ?? ''}>

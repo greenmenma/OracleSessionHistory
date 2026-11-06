@@ -11,6 +11,7 @@ builder.Services.Configure<CollectorOptions>(builder.Configuration.GetSection("C
 builder.Services.AddOracleSessionHistoryCore(builder.Configuration);
 builder.Services.AddHostedService<CollectorHost>();
 builder.Services.AddHostedService<ProcessInfoCollector>();
+builder.Services.AddHostedService<UserNameCollector>();
 
 var host = builder.Build();
 host.Run();

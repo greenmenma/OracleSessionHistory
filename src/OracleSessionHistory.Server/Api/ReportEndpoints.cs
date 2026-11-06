@@ -18,9 +18,9 @@ public sealed record NameCount(string Name, int Count);
 
 /// <summary>
 /// 接続アプリ表の 1 行（木構造）。端末 → 実行ファイル → IIS のプール・sqlplus の実行元、
-/// ORACLE.EXE → DB Link（接続元 DB）→ 接続元のアプリ（実行ファイル → プール・実行元）。
+/// ORACLE.EXE → DB Link（接続元 DB）→ 接続元の端末 → 接続元のアプリ（実行ファイル → プール・実行元）。
 /// </summary>
-/// <param name="Kind">machine（端末）・exe（実行ファイル）・app（プール・実行元等）・dblink（DB Link 接続元）・other（区別できないもの）</param>
+/// <param name="Kind">machine（端末。DB Link の下は接続元の端末）・exe（実行ファイル）・app（プール・実行元等）・dblink（DB Link 接続元）・other（区別できないもの）</param>
 /// <param name="Detail">補足（IIS のサイト・フォルダ・DB Link の接続元の端末等）</param>
 /// <param name="AuditPeriods">監査証跡の件数を使った列（端末の行のみ。today・d1〜d6・month1・month2）</param>
 /// <param name="Open">クリックで開くセッション履歴の検索条件（null は開かない）</param>
@@ -214,7 +214,7 @@ public static class ReportEndpoints
             {
                 var linked = l.ToList();
                 var open = Open(("host", host), ("via", host), ("linkSource", l.Key));
-                children.Add(Node(ConnectionCountKinds.DbLink, l.Key, null, null, linked, open, OriginExeNodes(linked, open)));
+                children.Add(Node(ConnectionCountKinds.DbLink, l.Key, null, null, linked, open, OriginMachineNodes(linked, open)));
             }
             // 区別できないもの（プール・実行元・接続元を特定できていない）。他に下の段がある場合だけ別の行にする
             var rest = direct.Where(r => AppIdentifier.SplitForTree(r.Program, r.AppName).Sub is null).ToList();
@@ -231,15 +231,24 @@ public static class ReportEndpoints
         return Sort(list);
     }
 
-    /// <summary>DB Link 接続元の下：接続元のアプリを、端末の下と同じく実行ファイル → プール・実行元に分ける（接続元の端末は補足に出す）</summary>
-    private static List<ConnectionCountNode> OriginExeNodes(List<ConnectionCountRaw> rows, IReadOnlyDictionary<string, string> linkOpen)
+    /// <summary>DB Link 接続元の下：接続元の端末ごと（その下は端末の下と同じく実行ファイル → プール・実行元）</summary>
+    private static List<ConnectionCountNode> OriginMachineNodes(List<ConnectionCountRaw> rows, IReadOnlyDictionary<string, string> linkOpen)
     {
-        IReadOnlyDictionary<string, string> With(params (string, string)[] extra) =>
-            new Dictionary<string, string>(linkOpen.Concat(extra.Select(e => KeyValuePair.Create(e.Item1, e.Item2))));
-        string? Origins(IEnumerable<ConnectionCountRaw> rs) =>
-            string.Join(", ", rs.Select(r => string.IsNullOrEmpty(r.OriginMachine) ? "(不明)" : r.OriginMachine)
-                .Distinct(StringComparer.OrdinalIgnoreCase).Order()) is { Length: > 0 } s ? "接続元: " + s : null;
+        var list = new List<ConnectionCountNode>();
+        foreach (var g in rows.GroupBy(r => MachineKey(r.OriginMachine)))
+        {
+            var all = g.ToList();
+            var machine = all.Select(r => r.OriginMachine).FirstOrDefault(m => !string.IsNullOrEmpty(m));
+            var origin = string.IsNullOrEmpty(machine) ? SessionEndpoints.UnknownMachine : machine;
+            var open = With(linkOpen, ("origin", origin));
+            list.Add(Node(ConnectionCountKinds.Machine, origin, null, null, all, open, OriginExeNodes(all, open)));
+        }
+        return Sort(list);
+    }
 
+    /// <summary>接続元の端末の下：接続元のアプリを、端末の下と同じく実行ファイル → プール・実行元に分ける</summary>
+    private static List<ConnectionCountNode> OriginExeNodes(List<ConnectionCountRaw> rows, IReadOnlyDictionary<string, string> originOpen)
+    {
         var list = new List<ConnectionCountNode>();
         foreach (var g in rows.GroupBy(r => AppIdentifier.SplitForTree(null, r.OriginApp!).Exe, StringComparer.OrdinalIgnoreCase))
         {
@@ -249,19 +258,22 @@ public static class ReportEndpoints
                          .Where(x => x.Sub is not null).GroupBy(x => x.Sub!, StringComparer.OrdinalIgnoreCase))
             {
                 var sub = s.Select(x => x.Row).ToList();
-                children.Add(Node(ConnectionCountKinds.App, s.Key, Origins(sub), null, sub, With(("app", sub[0].OriginApp!), ("exact", "true")), []));
+                children.Add(Node(ConnectionCountKinds.App, s.Key, null, null, sub, With(originOpen, ("app", sub[0].OriginApp!), ("exact", "true")), []));
             }
             var rest = all.Where(r => AppIdentifier.SplitForTree(null, r.OriginApp!).Sub is null).ToList();
             if (children.Count > 0 && rest.Count > 0)
-                children.Add(Node(ConnectionCountKinds.Other, RestLabel(g.Key), Origins(rest), null, rest,
-                    With(("app", rest[0].OriginApp!), ("exact", "true")), []));
+                children.Add(Node(ConnectionCountKinds.Other, RestLabel(g.Key), null, null, rest,
+                    With(originOpen, ("app", rest[0].OriginApp!), ("exact", "true")), []));
             // 下の段がある実行ファイルは、w3wp.exe なら「IIS: 」、それ以外は実行ファイル名の部分一致で接続元のアプリを探す
-            var open = children.Count == 0 ? With(("app", all[0].OriginApp!), ("exact", "true"))
-                : With(("app", g.Key.Equals("w3wp.exe", StringComparison.OrdinalIgnoreCase) ? "IIS: " : g.Key));
-            list.Add(Node(ConnectionCountKinds.Exe, g.Key, children.Count == 0 ? Origins(all) : null, null, all, open, Sort(children)));
+            var open = children.Count == 0 ? With(originOpen, ("app", all[0].OriginApp!), ("exact", "true"))
+                : With(originOpen, ("app", g.Key.Equals("w3wp.exe", StringComparison.OrdinalIgnoreCase) ? "IIS: " : g.Key));
+            list.Add(Node(ConnectionCountKinds.Exe, g.Key, null, null, all, open, Sort(children)));
         }
         return Sort(list);
     }
+
+    private static IReadOnlyDictionary<string, string> With(IReadOnlyDictionary<string, string> open, params (string Key, string Value)[] extra) =>
+        new Dictionary<string, string>(open.Concat(extra.Select(e => KeyValuePair.Create(e.Key, e.Value))));
 
     private static string RestLabel(string exe) => exe.ToLowerInvariant() switch
     {

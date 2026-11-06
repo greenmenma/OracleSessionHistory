@@ -230,7 +230,7 @@ export interface PeriodCounts {
  * ORACLE.EXE → DB Link（接続元 DB）→ 接続元のアプリ（実行ファイル → プール・実行元）
  */
 export interface ConnectionCountNode extends PeriodCounts {
-  /** machine（端末）・exe（実行ファイル）・app（プール・実行元等）・dblink（DB Link 接続元）・other（区別できないもの） */
+  /** machine（端末。DB Link の下は接続元の端末）・exe（実行ファイル）・app（プール・実行元等）・dblink（DB Link 接続元）・other（区別できないもの） */
   kind: 'machine' | 'exe' | 'app' | 'dblink' | 'other'
   label: string
   /** 補足（IIS のサイト・フォルダ・DB Link の接続元の端末等） */
@@ -355,6 +355,8 @@ export const api = {
   sessions: (params: Record<string, string | number | boolean | undefined>) =>
     request<Paged<SessionListItem>>('GET', `api/sessions${qs(params)}`),
   session: (id: number) => request<SessionDetail>('GET', `api/sessions/${id}`),
+  /** 実行ユーザの表示名（アカウントを大文字にした値 → AD の displayName） */
+  userNames: () => request<Record<string, string>>('GET', 'api/user-names'),
   connectionCounts: (targetId?: number, q?: string) =>
     request<ConnectionCounts>('GET', `api/connection-counts${qs({ targetId, q })}`),
 

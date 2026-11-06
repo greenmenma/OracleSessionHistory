@@ -18,6 +18,9 @@ public sealed class CollectorOptions
     /// </summary>
     public int AuditLogonMinutes { get; set; } = 60;
 
+    /// <summary>実行ユーザの表示名（AD の displayName）を取得する間隔（分）。0 以下で取得しない</summary>
+    public int UserNameMinutes { get; set; } = 10;
+
     /// <summary>監視対象が 1 件も無い場合にデモ用の監視対象を登録する</summary>
     public bool SeedDemoTarget { get; set; }
 }

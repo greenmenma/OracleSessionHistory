@@ -188,6 +188,29 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
                     b.ToTable("DbLinkUsages");
                 });
 
+            modelBuilder.Entity("OracleSessionHistory.Core.Entities.DirectoryUser", b =>
+                {
+                    b.Property<string>("Account")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Found")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("ResolvedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Account");
+
+                    b.HasIndex("DisplayName");
+
+                    b.ToTable("DirectoryUsers");
+                });
+
             modelBuilder.Entity("OracleSessionHistory.Core.Entities.LinkSource", b =>
                 {
                     b.Property<int>("Id")
