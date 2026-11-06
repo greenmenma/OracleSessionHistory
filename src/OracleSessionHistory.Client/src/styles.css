@@ -105,7 +105,9 @@ td.empty { text-align: center; color: var(--muted); padding: 24px; }
 table.counts td.zero { color: var(--muted); opacity: .5; }
 table.counts .sep { border-left: 2px solid var(--border); }
 /* 接続アプリ表の木（端末 → 実行ファイル → プール・実行元、ORACLE.EXE → DB Link → 接続元のアプリ） */
-table.tree tr.tree-machine td { background: var(--surface-2); font-weight: 700; border-top: 2px solid var(--border); }
+table.tree tr.tree-machine.depth-0 td { background: var(--surface-2); font-weight: 700; border-top: 2px solid var(--border); }
+/* DB Link の下の接続元の端末 */
+table.tree tr.tree-machine:not(.depth-0) td:first-child .tree-name { font-weight: 700; }
 table.tree tr.tree-exe td:first-child .tree-name { font-weight: 600; }
 table.tree tr.tree-other td:first-child .tree-name { color: var(--muted); font-style: italic; }
 .tree-cell { display: flex; align-items: flex-start; }

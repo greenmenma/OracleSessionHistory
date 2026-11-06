@@ -207,14 +207,19 @@ public sealed class ApiQueryTests : IDisposable
         Assert.Equal(["基幹DB", "(接続元不明)"], oracle.Children.Select(c => c.Label));
         var link = Find(nodes, "KIKAN-DB01", "ORACLE.EXE", "基幹DB");
         Assert.Equal((ConnectionCountKinds.DbLink, 4), (link.Kind, link.Today));
-        Assert.Equal(["w3wp.exe", "sqlplus.exe", "在庫照会.exe"], link.Children.Select(c => c.Label));
-        var pool = Find(nodes, "KIKAN-DB01", "ORACLE.EXE", "基幹DB", "w3wp.exe", "Pool3");
-        Assert.Equal((2, "接続元: KIKAN-AP01, KIKAN-AP02"), (pool.Today, pool.Detail));
-        Assert.Equal("月次.bat", Find(nodes, "KIKAN-DB01", "ORACLE.EXE", "基幹DB", "sqlplus.exe").Children.Single().Label);
-        Assert.Equal("接続元: KIKAN-AP03", Find(nodes, "KIKAN-DB01", "ORACLE.EXE", "基幹DB", "在庫照会.exe").Detail);
-        // 接続元の端末を親の行にはしない
+        // DB Link の下は接続元の端末 → 実行ファイル → プール・実行元
+        Assert.Equal(["KIKAN-AP01", "KIKAN-AP02", "KIKAN-AP03"], link.Children.Select(c => c.Label));
+        var ap01 = Find(nodes, "KIKAN-DB01", "ORACLE.EXE", "基幹DB", "KIKAN-AP01");
+        Assert.Equal((ConnectionCountKinds.Machine, 2), (ap01.Kind, ap01.Today));
+        Assert.Equal(["sqlplus.exe", "w3wp.exe"], ap01.Children.Select(c => c.Label).Order());
+        Assert.Equal("月次.bat", Find(nodes, "KIKAN-DB01", "ORACLE.EXE", "基幹DB", "KIKAN-AP01", "sqlplus.exe").Children.Single().Label);
+        var pool = Find(nodes, "KIKAN-DB01", "ORACLE.EXE", "基幹DB", "KIKAN-AP02", "w3wp.exe", "Pool3");
+        Assert.Equal(1, pool.Today);
+        Assert.Empty(Find(nodes, "KIKAN-DB01", "ORACLE.EXE", "基幹DB", "KIKAN-AP03", "在庫照会.exe").Children);
+        // 接続元の端末を一番上の段にはしない
         Assert.DoesNotContain(nodes, n => n.Label.StartsWith("KIKAN-AP"));
-        Assert.Equal(("KIKAN-DB01", "KIKAN-DB01", "基幹DB", "IIS: Pool3"), (pool.Open!["host"], pool.Open["via"], pool.Open["linkSource"], pool.Open["app"]));
+        Assert.Equal(("KIKAN-DB01", "KIKAN-DB01", "基幹DB", "KIKAN-AP02", "IIS: Pool3"),
+            (pool.Open!["host"], pool.Open["via"], pool.Open["linkSource"], pool.Open["origin"], pool.Open["app"]));
     }
 
     [Fact]
@@ -315,6 +320,9 @@ public sealed class ApiQueryTests : IDisposable
         Assert.Equal(2, Find("KIKAN-DB01", null, null, null).Count); // DB Link 経由も DB サーバーの端末で探す
         Assert.Equal("基幹DB", Find("KIKAN-DB01", "KIKAN-DB01", "基幹DB", "IIS: Pool3").Single().LinkOriginSource);
         Assert.Equal("KIKAN-AP01", Find("KIKAN-AP01", SessionEndpoints.DirectVia, null, "IIS: Pool3").Single().Machine);
+        var byOrigin = SessionEndpoints.Filter(_db.Sessions, new SessionSearch(null, null, null, null, null, null, null, null, null, null,
+            Host: "KIKAN-DB01", Origin: "KIKAN-AP01")).ToList();
+        Assert.Equal(2, byOrigin.Count);
     }
 
     [Fact]
@@ -341,7 +349,7 @@ public class ApiQuerySqlServerTests
         using var db = new AppDbContext((DbContextOptions<AppDbContext>)AppDatabase.Configure(new DbContextOptionsBuilder<AppDbContext>(),
             AppDbProviders.SqlServer, "Server=localhost;Database=x;Integrated Security=true;TrustServerCertificate=true").Options);
         var sql = SessionEndpoints.Filter(db.Sessions,
-            new SessionSearch(1, "connected", "foo", "WEB", null, null, "user", null, null, null, App: "IIS")).ToQueryString();
+            new SessionSearch(1, "connected", "foo", "WEB", null, null, "user", null, null, null, App: "IIS"), db.DirectoryUsers).ToQueryString();
         Assert.Contains("[s].[ProcessKind] IN (N'Client', N'DbLinkSuspect')", sql);
     }
 

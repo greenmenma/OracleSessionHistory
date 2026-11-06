@@ -3,6 +3,7 @@ import { api, type ConnectionCountNode, type PeriodCounts } from '../api'
 import { useAsync } from '../hooks'
 import { fmtDate, fmtDateTime } from '../format'
 import { navigate } from '../router'
+import UserName from '../components/UserName'
 
 type CountKey = keyof PeriodCounts
 
@@ -67,7 +68,9 @@ export default function CountsPage({ targetId }: { targetId?: number }) {
             </div>
           </div>
         </td>
-        <td className="nowrap">{n.owner}</td>
+        <td className="nowrap">
+          <UserName account={n.owner} />
+        </td>
         <td className={`num ${n.connected === 0 ? 'zero' : ''}`}>{n.connected}</td>
         <td className="nowrap">{fmtDateTime(n.lastSeenAt)}</td>
         {columns.map((c, i) => {
@@ -97,7 +100,7 @@ export default function CountsPage({ targetId }: { targetId?: number }) {
       <div className="page-head">
         <h1>接続アプリ</h1>
         <span className="muted">
-          実行端末 → 実行ファイル → IIS のプール・sqlplus の実行元の順に、ログオン回数（取得できたセッション数）を表示します。DB Link 経由の接続は、DB サーバーの ORACLE.EXE の下に DB Link 接続元 → 接続元のアプリで表示します。Oracle 内部プロセス（ジョブ等）は含みません
+          実行端末 → 実行ファイル → IIS のプール・sqlplus の実行元の順に、ログオン回数（取得できたセッション数）を表示します。DB Link 経由の接続は、DB サーバーの ORACLE.EXE の下に DB Link 接続元 → 接続元の端末 → 接続元のアプリで表示します。Oracle 内部プロセス（ジョブ等）は含みません
         </span>
       </div>
       <form

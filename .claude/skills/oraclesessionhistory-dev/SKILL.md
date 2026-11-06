@@ -48,7 +48,8 @@ cd src/OracleSessionHistory.Client && npm run dev       # http://localhost:5173 
 - セッション履歴：「アプリ」列にアプリ名と補足。デモでは `DEV-PC07` が「取得失敗」、`ORACLE.EXE (J000)` は「Oracle 内部プロセスも表示」で出る
 - 設定：「プロセス情報の取得」の保存（パスワード欄を触らずに保存しても保持される）。macOS では接続テストが「Windows のみ」になる
 - sqlplus.exe：デモでは `BATCHSV02` が `sqlplus.exe: 月次集計.bat`、`OPE-PC01` が `sqlplus.exe: cmd.exe`。詳細に「実行元」、コマンドラインのパスワードは `********`
-- 接続アプリ：DB Link 接続元（Provider=Demo）を登録すると、`KIKAN-DB01` → `ORACLE.EXE` → DB Link 接続元 → 接続元のアプリ（`w3wp.exe` → `JuchuWeb` 等、補足に接続元の端末）が出る
+- 接続アプリ：DB Link 接続元（Provider=Demo）を登録すると、`KIKAN-DB01` → `ORACLE.EXE` → DB Link 接続元 → 接続元の端末（`KIKAN-AP01` 等）→ 接続元のアプリ（`w3wp.exe` → `JuchuWeb` 等）が出る
+- 実行ユーザ：macOS ではデモの疑似ディレクトリにより `yamada` が「山田 太郎」等の表示名で出る。セッション履歴の「実行ユーザ」に「山田」と入れて検索できる
 - セッション履歴：このシステム自身の接続（デモでは `OracleSessionHistory.Batch.exe`）は既定で出ない
 - DB Link 利用元：DB Link 接続元（Provider=Demo）を登録すると、「実行アプリ」に `IIS: JuchuWeb` 等が出る。セッション履歴の `ORACLE.EXE` の行に「DB Link 経由: アプリ（端末）」
 - 設定：監視対象の追加・接続テスト、DB Link 接続元の追加 → 「DB Link 一覧を取得」→ 選択 → 保存
