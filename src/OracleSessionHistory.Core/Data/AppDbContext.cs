@@ -15,6 +15,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<LinkSource> LinkSources => Set<LinkSource>();
     public DbSet<DbLinkUsage> DbLinkUsages => Set<DbLinkUsage>();
     public DbSet<ProcessInspectionSettings> ProcessInspectionSettings => Set<ProcessInspectionSettings>();
+    public DbSet<AuditLogonCount> AuditLogonCounts => Set<AuditLogonCount>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -47,6 +48,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.LinkOriginMachine).HasMaxLength(256);
             e.Property(x => x.LinkOriginApp).HasMaxLength(256);
             e.HasIndex(x => new { x.LinkOriginMachine, x.LinkOriginApp });
+            e.HasOne(x => x.Target).WithMany().HasForeignKey(x => x.TargetId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<AuditLogonCount>(e =>
+        {
+            e.HasIndex(x => new { x.TargetId, x.Day, x.Machine }).IsUnique();
+            e.Property(x => x.Machine).HasMaxLength(256);
             e.HasOne(x => x.Target).WithMany().HasForeignKey(x => x.TargetId).OnDelete(DeleteBehavior.Cascade);
         });
 

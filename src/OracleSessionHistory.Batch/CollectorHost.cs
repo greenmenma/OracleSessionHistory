@@ -88,6 +88,8 @@ public sealed class CollectorHost(
     private async Task RunTargetAsync(int targetId, string name, CancellationToken ct)
     {
         var lastLinkPoll = DateTime.MinValue;
+        var lastAuditPoll = DateTime.MinValue;
+        var auditNeeded = options.Value.AuditLogonMinutes > 0;
         while (!ct.IsCancellationRequested)
         {
             var interval = 5;
@@ -106,6 +108,13 @@ public sealed class CollectorHost(
                     {
                         await collection.PollLinkSourcesAsync(targetId, ct);
                         lastLinkPoll = DateTime.Now;
+                    }
+
+                    // 履歴が 2 ヶ月分たまるまで、監査証跡のログオン件数で接続アプリ表を補う（失敗しても収集は続ける）
+                    if (outcome.Success && auditNeeded && DateTime.Now - lastAuditPoll >= TimeSpan.FromMinutes(options.Value.AuditLogonMinutes))
+                    {
+                        auditNeeded = (await collection.PollAuditLogonsAsync(targetId, ct)).Needed;
+                        lastAuditPoll = DateTime.Now;
                     }
 
                     // 処理時間を差し引いて次回まで待つ

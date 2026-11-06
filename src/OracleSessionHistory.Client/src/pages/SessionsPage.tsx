@@ -22,6 +22,8 @@ interface Filters {
   includeInternal: boolean
   /** 実行端末・アプリを完全一致で検索する（接続アプリ表からの遷移） */
   exact: boolean
+  /** 経由（接続アプリ表の親子の行からの遷移）：direct は直接の接続のみ、それ以外は経由した DB サーバーの DB Link 経由の接続のみ */
+  via: string
 }
 
 type BoolKey = 'includeInternal' | 'exact'
@@ -47,7 +49,12 @@ function fromQuery(query: URLSearchParams): Filters {
     to: query.get('to') ?? '',
     includeInternal: query.get('includeInternal') === 'true',
     exact: query.get('exact') === 'true',
+    via: query.get('via') ?? '',
   }
+}
+
+function viaLabel(via: string): string {
+  return via === 'direct' ? '直接の接続のみ（DB Link 経由を除く）' : `DB Link 経由（${via}）の接続のみ`
 }
 
 export default function SessionsPage({ targetId, query }: { targetId?: number; query: URLSearchParams }) {
@@ -100,7 +107,8 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
 
   const set = (k: Exclude<keyof Filters, BoolKey>) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     // 接続アプリから開いた（完全一致の）状態で端末・アプリを書き換えたら、部分一致で探したいものとして完全一致を外す
-    setForm({ ...form, [k]: e.target.value, ...(k === 'machine' || k === 'app' ? { exact: false } : {}) })
+    // 経由の条件も、接続アプリの行に合わせたものなので外す
+    setForm({ ...form, [k]: e.target.value, ...(k === 'machine' || k === 'app' ? { exact: false, via: '' } : {}) })
 
   const search = (e: React.FormEvent) => {
     e.preventDefault()
@@ -170,6 +178,17 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
           <input type="checkbox" checked={form.exact} onChange={setBool('exact', false)} />
           端末・アプリを完全一致
         </label>
+        {form.via && (
+          <span className="inline">
+            <span className="badge gray">{viaLabel(form.via)}</span>
+            <button type="button" onClick={() => {
+                setForm({ ...form, via: '' })
+                apply({ ...filters, via: '' })
+              }} title="経由の条件を外す">
+              ✕
+            </button>
+          </span>
+        )}
         <div className="actions">
           <button type="submit" className="primary">
             検索

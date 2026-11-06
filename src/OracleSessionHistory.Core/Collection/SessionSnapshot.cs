@@ -67,6 +67,12 @@ public interface ISessionSource
     Task<SessionSnapshot> CaptureAsync(Entities.MonitorTarget target, CancellationToken ct);
     /// <summary>接続テスト。成功時はサーバー情報（バージョン等）を返す。</summary>
     Task<string> TestConnectionAsync(string connectionString, CancellationToken ct);
+
+    /// <summary>
+    /// 監査証跡（DBA_AUDIT_SESSION 等）から、期間内の成功したログオン件数を日・端末ごとに取得する（このシステム自身の接続は除く）。
+    /// 失敗時は例外。
+    /// </summary>
+    Task<IReadOnlyList<Entities.AuditLogonDay>> CaptureAuditLogonsAsync(Entities.MonitorTarget target, DateTime from, DateTime to, CancellationToken ct);
 }
 
 /// <summary>Provider 名から取得元を解決する</summary>

@@ -16,13 +16,16 @@ public sealed record SessionListItem(
 public sealed record SessionSearch(
     int? TargetId, string? State, string? Q, string? Machine, string? Program, string? Username, string? OsUser,
     string? Kind, DateTime? From, DateTime? To, int Page = 1, int PageSize = 50,
-    string? App = null, bool IncludeInternal = false, bool Exact = false);
+    string? App = null, bool IncludeInternal = false, bool Exact = false, string? Via = null);
 
 /// <summary>セッション履歴の検索 API</summary>
 public static class SessionEndpoints
 {
     /// <summary>完全一致の検索で「端末なし（MACHINE が空）」を表す値。接続アプリ表の「(不明)」から遷移した場合に使う</summary>
     public const string UnknownMachine = "(不明)";
+
+    /// <summary>経由の条件（<see cref="SessionSearch.Via"/>）で、DB Link 経由ではない（直接の）接続を表す値。それ以外の値は経由した DB サーバー</summary>
+    public const string DirectVia = "direct";
 
     /// <summary>一覧の 1 行（DB Link の可能性がある行は、特定できた接続元のアプリも含める）</summary>
     internal static IQueryable<SessionListItem> Project(IQueryable<TrackedSession> q) =>
@@ -128,6 +131,14 @@ public static class SessionEndpoints
             {
                 q = q.Where(x => (x.LinkOriginApp == null && x.Machine == m) || (x.LinkOriginApp != null && x.LinkOriginMachine == m));
             }
+        }
+        // 経由：接続アプリ表の親子の行から遷移した場合。直接の接続だけ、または特定の DB サーバーを経由した DB Link 経由の接続だけにする
+        if (!string.IsNullOrWhiteSpace(s.Via))
+        {
+            var via = s.Via.Trim();
+            q = via == DirectVia ? q.Where(x => x.LinkOriginApp == null)
+                : via == UnknownMachine ? q.Where(x => x.LinkOriginApp != null && (x.Machine == null || x.Machine == ""))
+                : q.Where(x => x.LinkOriginApp != null && x.Machine == via);
         }
         if (!string.IsNullOrWhiteSpace(s.Program)) q = q.Where(x => EF.Functions.Like(x.Program, QueryHelpers.Contains(s.Program.Trim()), "\\"));
         if (!string.IsNullOrWhiteSpace(s.Username)) q = q.Where(x => EF.Functions.Like(x.Username, QueryHelpers.Contains(s.Username.Trim()), "\\"));

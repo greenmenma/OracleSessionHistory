@@ -71,6 +71,25 @@ public sealed class OracleSessionSource : ISessionSource
          where sid <> qcsid and qcsid is not null
         """;
 
+    // 監査証跡（標準監査）の成功したログオン。DBA_AUDIT_SESSION は 1 セッション 1 行（ログオフ時に同じ行が更新される）。
+    // 時刻は DB サーバーの時刻（logon_time と同じ）。監視ユーザ（このシステム）の接続は除く
+    internal const string AuditLogonSql = """
+        select trunc(a.timestamp) as day, trim(a.userhost) as machine, count(*) as cnt
+          from dba_audit_session a
+         where a.timestamp >= :from_day and a.timestamp < :to_day
+           and a.returncode = 0
+           and a.username <> sys_context('USERENV', 'SESSION_USER')
+         group by trunc(a.timestamp), trim(a.userhost)
+        """;
+
+    public async Task<IReadOnlyList<AuditLogonDay>> CaptureAuditLogonsAsync(MonitorTarget target, DateTime from, DateTime to, CancellationToken ct)
+    {
+        await using var conn = await OracleDb.OpenAsync(target.ConnectionString, ct);
+        return await OracleDb.QueryAsync(conn, AuditLogonSql, r => new AuditLogonDay(r.Date("day"), r.Str("machine"), r.Int("cnt")), ct, 120,
+            new OracleParameter("from_day", OracleDbType.Date, from, System.Data.ParameterDirection.Input),
+            new OracleParameter("to_day", OracleDbType.Date, to, System.Data.ParameterDirection.Input));
+    }
+
     public async Task<SessionSnapshot> CaptureAsync(MonitorTarget target, CancellationToken ct)
     {
         var timeout = Math.Max(target.IntervalSeconds * 3, 15);

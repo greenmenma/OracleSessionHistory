@@ -206,6 +206,23 @@ public sealed class DemoSessionSource(DemoWorld world) : ISessionSource
     public Task<SessionSnapshot> CaptureAsync(MonitorTarget target, CancellationToken ct) => Task.FromResult(world.Capture(target));
 
     public Task<string> TestConnectionAsync(string connectionString, CancellationToken ct) => Task.FromResult("接続成功（デモ）");
+
+    /// <summary>監査証跡の疑似データ（端末ごとに、履歴と同じくらいの件数）</summary>
+    public Task<IReadOnlyList<AuditLogonDay>> CaptureAuditLogonsAsync(MonitorTarget target, DateTime from, DateTime to, CancellationToken ct)
+    {
+        var list = new List<AuditLogonDay>();
+        for (var day = from.Date; day < to; day = day.AddDays(1))
+        {
+            var rand = new Random(day.DayOfYear * 31 + target.Id);
+            var weekend = day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+            foreach (var g in DemoWorld.Profiles.GroupBy(p => p.Machine))
+            {
+                var count = g.Sum(p => rand.Next(0, p.Weight * (weekend ? 1 : 3) + 1));
+                if (count > 0) list.Add(new AuditLogonDay(day, g.Key, count));
+            }
+        }
+        return Task.FromResult<IReadOnlyList<AuditLogonDay>>(list);
+    }
 }
 
 public sealed class DemoDbLinkInspector(DemoWorld world) : IDbLinkInspector
@@ -218,15 +235,20 @@ public sealed class DemoDbLinkInspector(DemoWorld world) : IDbLinkInspector
         Task.FromResult(new DbLinkUsageResult(world.FindUsages(source, processIds), []));
 }
 
-/// <summary>デモ用の過去履歴（接続数表の確認用に約 2 ヶ月分）</summary>
+/// <summary>
+/// デモ用の過去履歴（接続数表の確認用に約 3 週間分）。それより前は監査証跡の疑似データ（<see cref="DemoSessionSource.CaptureAuditLogonsAsync"/>）で補う
+/// </summary>
 public static class DemoHistory
 {
+    /// <summary>過去履歴を作る日数</summary>
+    public const int HistoryDays = 20;
+
     public static List<TrackedSession> Generate(int targetId, DateTime now, int seed = 42)
     {
         var rand = new Random(seed);
         var list = new List<TrackedSession>();
         var sid = 10;
-        for (var day = 65; day >= 0; day--)
+        for (var day = HistoryDays; day >= 0; day--)
         {
             var date = now.Date.AddDays(-day);
             foreach (var p in DemoWorld.Profiles)

@@ -284,6 +284,77 @@ public sealed class CollectionServiceTests : IDisposable
         Assert.Equal(2, await db2.DbLinkUsages.CountAsync());
     }
 
+    [Fact]
+    public async Task 監査証跡のログオン件数を履歴が丸1日そろう前日まで取得する()
+    {
+        var firstSeen = DateTime.Today.AddDays(-10).AddHours(13);
+        using (var db = _factory.CreateDbContext())
+        {
+            db.Sessions.Add(new TrackedSession
+            {
+                TargetId = _targetId, InstId = 1, Sid = 1, Serial = 1, LogonTime = firstSeen, Machine = "WEB01", AppName = "x",
+                FirstSeenAt = firstSeen, LastSeenAt = firstSeen,
+            });
+            db.SaveChanges();
+        }
+        _source.Audit =
+        [
+            new(DateTime.Today.AddDays(-20), "WEB01", 5),
+            new(DateTime.Today.AddDays(-20), " web01 ", 2), // 大文字小文字・空白の違いは同じ端末
+            new(DateTime.Today.AddDays(-10), null, 3),
+        ];
+
+        var r = await _service.PollAuditLogonsAsync(_targetId, default);
+
+        Assert.True(r is { Needed: true, Success: true, Rows: 2 });
+        var from = DateTime.Today.AddMonths(-2);
+        var to = DateTime.Today.AddDays(-9);
+        Assert.Equal((from, to), _source.AuditCalls.Single());
+        using var db2 = _factory.CreateDbContext();
+        var rows = await db2.AuditLogonCounts.OrderBy(a => a.Day).ToListAsync();
+        Assert.Equal([("WEB01", 7), ("", 3)], rows.Select(a => (a.Machine, a.Count)));
+        var t = await db2.Targets.SingleAsync();
+        Assert.Equal((from, to, (string?)null), (t.AuditFrom, t.AuditTo, t.AuditError));
+    }
+
+    [Fact]
+    public async Task 履歴が2ヶ月分たまったら監査証跡を取得しない()
+    {
+        var firstSeen = DateTime.Today.AddMonths(-2).AddDays(-1);
+        using (var db = _factory.CreateDbContext())
+        {
+            db.Sessions.Add(new TrackedSession
+            {
+                TargetId = _targetId, InstId = 1, Sid = 1, Serial = 1, LogonTime = firstSeen, Machine = "WEB01", AppName = "x",
+                FirstSeenAt = firstSeen, LastSeenAt = firstSeen,
+            });
+            db.SaveChanges();
+        }
+
+        var r = await _service.PollAuditLogonsAsync(_targetId, default);
+
+        Assert.False(r.Needed);
+        Assert.Empty(_source.AuditCalls);
+    }
+
+    [Fact]
+    public async Task 監査証跡の取得に失敗したら理由を残し保存済みの件数は消さない()
+    {
+        using (var db = _factory.CreateDbContext())
+        {
+            db.AuditLogonCounts.Add(new AuditLogonCount { TargetId = _targetId, Day = DateTime.Today.AddDays(-3), Machine = "WEB01", Count = 4 });
+            db.SaveChanges();
+        }
+        _source.AuditFail = true;
+
+        var r = await _service.PollAuditLogonsAsync(_targetId, default);
+
+        Assert.False(r.Success);
+        using var db2 = _factory.CreateDbContext();
+        Assert.Contains("ORA-00942", (await db2.Targets.SingleAsync()).AuditError);
+        Assert.Equal(1, await db2.AuditLogonCounts.CountAsync());
+    }
+
     private sealed class TestDbFactory(DbContextOptions<AppDbContext> options) : IDbContextFactory<AppDbContext>
     {
         public AppDbContext CreateDbContext() => new(options);
@@ -307,6 +378,17 @@ public sealed class CollectionServiceTests : IDisposable
         }
 
         public Task<string> TestConnectionAsync(string connectionString, CancellationToken ct) => Task.FromResult("ok");
+
+        public List<AuditLogonDay> Audit { get; set; } = [];
+        public bool AuditFail { get; set; }
+        public List<(DateTime From, DateTime To)> AuditCalls { get; } = [];
+
+        public Task<IReadOnlyList<AuditLogonDay>> CaptureAuditLogonsAsync(MonitorTarget target, DateTime from, DateTime to, CancellationToken ct)
+        {
+            AuditCalls.Add((from, to));
+            if (AuditFail) throw new InvalidOperationException("ORA-00942: 表またはビューが存在しません");
+            return Task.FromResult<IReadOnlyList<AuditLogonDay>>(Audit.Where(a => a.Day >= from && a.Day < to).ToList());
+        }
     }
 
     private sealed class FakeInspector : IDbLinkInspector

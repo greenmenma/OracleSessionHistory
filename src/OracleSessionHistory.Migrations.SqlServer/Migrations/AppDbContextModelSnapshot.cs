@@ -22,6 +22,36 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("OracleSessionHistory.Core.Entities.AuditLogonCount", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("Count")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("Day")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Machine")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int>("TargetId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TargetId", "Day", "Machine")
+                        .IsUnique();
+
+                    b.ToTable("AuditLogonCounts");
+                });
+
             modelBuilder.Entity("OracleSessionHistory.Core.Entities.DbLinkUsage", b =>
                 {
                     b.Property<long>("Id")
@@ -226,6 +256,18 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AuditError")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("AuditFetchedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("AuditFrom")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("AuditTo")
+                        .HasColumnType("datetime2");
 
                     b.Property<bool>("CollectSqlText")
                         .HasColumnType("bit");
@@ -530,6 +572,17 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
                         .IsUnique();
 
                     b.ToTable("Sessions");
+                });
+
+            modelBuilder.Entity("OracleSessionHistory.Core.Entities.AuditLogonCount", b =>
+                {
+                    b.HasOne("OracleSessionHistory.Core.Entities.MonitorTarget", "Target")
+                        .WithMany()
+                        .HasForeignKey("TargetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Target");
                 });
 
             modelBuilder.Entity("OracleSessionHistory.Core.Entities.DbLinkUsage", b =>
