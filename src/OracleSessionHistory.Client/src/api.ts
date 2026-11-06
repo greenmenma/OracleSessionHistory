@@ -225,27 +225,24 @@ export interface PeriodCounts {
   month2: number
 }
 
-/** 接続アプリ表の子の行（端末 × アプリ） */
-export interface ConnectionCountRow extends PeriodCounts {
-  machine: string | null
-  appName: string
-  appDetail: string | null
+/**
+ * 接続アプリ表の 1 行（木構造）。端末 → 実行ファイル → IIS のプール・sqlplus の実行元、
+ * ORACLE.EXE → DB Link（接続元 DB）→ 接続元のアプリ（実行ファイル → プール・実行元）
+ */
+export interface ConnectionCountNode extends PeriodCounts {
+  /** machine（端末）・exe（実行ファイル）・app（プール・実行元等）・dblink（DB Link 接続元）・other（区別できないもの） */
+  kind: 'machine' | 'exe' | 'app' | 'dblink' | 'other'
+  label: string
+  /** 補足（IIS のサイト・フォルダ・DB Link の接続元の端末等） */
+  detail: string | null
   owner: string | null
   connected: number
-  lastSeenAt: string
-  /** DB Link 経由の行の場合、経由した DB サーバー（直接の接続は null） */
-  linkVia: string | null
-}
-
-/** 接続アプリ表の親の行（端末、または DB Link 経由の DB サーバー） */
-export interface ConnectionCountGroup extends PeriodCounts {
-  kind: 'machine' | 'dblink'
-  machine: string | null
-  connected: number
   lastSeenAt: string | null
-  /** 監査証跡（DBA_AUDIT_SESSION）の件数を使った列 */
+  /** 監査証跡（DBA_AUDIT_SESSION）の件数を使った列（端末の行のみ） */
   auditPeriods: (keyof PeriodCounts)[]
-  children: ConnectionCountRow[]
+  /** クリックで開くセッション履歴の検索条件 */
+  open: Record<string, string> | null
+  children: ConnectionCountNode[]
 }
 
 /** 監視対象ごとの監査証跡の取得状況 */
@@ -260,7 +257,7 @@ export interface AuditCoverage {
 
 export interface ConnectionCounts {
   periods: Record<string, string>
-  groups: ConnectionCountGroup[]
+  nodes: ConnectionCountNode[]
   audit: AuditCoverage[]
 }
 

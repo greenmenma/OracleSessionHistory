@@ -140,7 +140,7 @@ public sealed class CollectionServiceTests : IDisposable
         Assert.All(usages, u => Assert.Equal(sessionId, u.MatchedSessionId));
         Assert.All(usages, u => Assert.Equal(2, u.HitCount));
         var session = await db2.Sessions.SingleAsync();
-        Assert.Equal(("KIKAN-AP01", "受注入力.exe"), (session.LinkOriginMachine, session.LinkOriginApp));
+        Assert.Equal(("KIKAN-AP01", "受注入力.exe", "基幹DB"), (session.LinkOriginMachine, session.LinkOriginApp, session.LinkOriginSource));
     }
 
     [Fact]

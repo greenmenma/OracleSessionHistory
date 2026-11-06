@@ -47,6 +47,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.IsConnected, x.ProcInfoState });
             e.Property(x => x.LinkOriginMachine).HasMaxLength(256);
             e.Property(x => x.LinkOriginApp).HasMaxLength(256);
+            e.Property(x => x.LinkOriginSource).HasMaxLength(100);
             e.HasIndex(x => new { x.LinkOriginMachine, x.LinkOriginApp });
             e.HasOne(x => x.Target).WithMany().HasForeignKey(x => x.TargetId).OnDelete(DeleteBehavior.Cascade);
         });

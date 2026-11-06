@@ -1,8 +1,7 @@
-import { useState } from 'react'
-import { api, type ConnectionCountGroup, type ConnectionCountRow, type PeriodCounts } from '../api'
+import { Fragment, useState } from 'react'
+import { api, type ConnectionCountNode, type PeriodCounts } from '../api'
 import { useAsync } from '../hooks'
 import { fmtDate, fmtDateTime } from '../format'
-import AppCell from '../components/AppCell'
 import { navigate } from '../router'
 
 type CountKey = keyof PeriodCounts
@@ -19,19 +18,11 @@ const columns: { key: CountKey; label: string; period: string }[] = [
   { key: 'month2', label: '1ヶ月〜2ヶ月', period: 'month2Start' },
 ]
 
-/** 端末なしの行を一覧で完全一致で開くための値（Server の SessionEndpoints.UnknownMachine） */
-const unknownMachine = '(不明)'
 const auditTitle = 'DBA_AUDIT_SESSION（監査証跡）のログオン件数を含みます（このシステムの履歴がまだ無い期間）'
 
-/** 親の行（端末・DB Link 経由）からセッション履歴を開く */
-function openGroup(g: ConnectionCountGroup) {
-  if (g.kind === 'dblink') navigate('/sessions', { via: g.machine || unknownMachine })
-  else navigate('/sessions', { machine: g.machine || unknownMachine, exact: 'true', via: 'direct' })
-}
-
-/** 子の行（アプリ）からセッション履歴を開く。部分一致だと WEB01 で WEB011 も出るため完全一致で開く */
-function openRow(r: ConnectionCountRow) {
-  navigate('/sessions', { machine: r.machine || unknownMachine, app: r.appName, exact: 'true', via: r.linkVia ?? 'direct' })
+/** 下の段の無い行（日別の列に件数の背景色を付ける） */
+function leaves(nodes: ConnectionCountNode[]): ConnectionCountNode[] {
+  return nodes.flatMap((n) => (n.children.length === 0 && n.kind !== 'machine' ? [n] : leaves(n.children)))
 }
 
 export default function CountsPage({ targetId }: { targetId?: number }) {
@@ -39,17 +30,74 @@ export default function CountsPage({ targetId }: { targetId?: number }) {
   const [q, setQ] = useState('')
   const { data, error, loading } = useAsync(() => api.connectionCounts(targetId, q), [targetId, q], 60000)
 
-  const groups = data?.groups ?? []
-  const totals = columns.map((c) => groups.reduce((a, g) => a + g[c.key], 0))
-  const max = Math.max(1, ...groups.flatMap((g) => g.children.flatMap((r) => columns.slice(0, 7).map((c) => r[c.key]))))
+  const nodes = data?.nodes ?? []
+  const totals = columns.map((c) => nodes.reduce((a, n) => a + n[c.key], 0))
+  const max = Math.max(1, ...leaves(nodes).flatMap((n) => columns.slice(0, 7).map((c) => n[c.key])))
   const audits = data?.audit ?? []
+
+  /**
+   * 1 行と、その下の段を再帰的に描く。
+   * guides は上の段ごとに「その段がまだ続くか」（続く段は │ を引く）
+   */
+  const renderNode = (n: ConnectionCountNode, guides: boolean[], last: boolean): React.ReactNode => (
+    <Fragment key={`${guides.length}|${n.kind}|${n.label}`}>
+      <tr
+        className={`tree-${n.kind} depth-${Math.min(guides.length, 4)}`}
+        onClick={n.open ? () => navigate('/sessions', n.open!) : undefined}
+        title={n.open ? 'クリックでセッション履歴を表示' : undefined}
+      >
+        <td>
+          <div className="tree-cell">
+            {guides.length > 0 && (
+              <span className="tree-line">
+                {guides.slice(1).map((g) => (g ? '│ ' : '  ')).join('')}
+                {last ? '└ ' : '├ '}
+              </span>
+            )}
+            <div className="tree-label">
+              {n.kind === 'dblink' && <span className="tree-kind">DB Link</span>}
+              <span className="tree-name" title={n.label}>
+                {n.label}
+              </span>
+              {n.detail && (
+                <div className="app-detail" title={n.detail}>
+                  {n.detail}
+                </div>
+              )}
+            </div>
+          </div>
+        </td>
+        <td className="nowrap">{n.owner}</td>
+        <td className={`num ${n.connected === 0 ? 'zero' : ''}`}>{n.connected}</td>
+        <td className="nowrap">{fmtDateTime(n.lastSeenAt)}</td>
+        {columns.map((c, i) => {
+          const v = n[c.key]
+          const audit = n.auditPeriods.includes(c.key)
+          const leaf = n.children.length === 0 && n.kind !== 'machine'
+          const heat = leaf && i < 7 && v > 0 ? 0.08 + (v / max) * 0.5 : 0
+          return (
+            <td
+              key={c.key}
+              className={`num ${i >= 7 ? 'sep' : ''} ${v === 0 ? 'zero' : ''}`}
+              style={heat ? { background: `rgb(var(--heat) / ${heat})` } : undefined}
+              title={audit ? auditTitle : undefined}
+            >
+              {audit && <span className="audit-mark">※</span>}
+              {v.toLocaleString()}
+            </td>
+          )
+        })}
+      </tr>
+      {n.children.map((c, i) => renderNode(c, [...guides, !last], i === n.children.length - 1))}
+    </Fragment>
+  )
 
   return (
     <div className="page">
       <div className="page-head">
         <h1>接続アプリ</h1>
         <span className="muted">
-          実行端末ごとに、アプリ別のログオン回数（取得できたセッション数）を表示します。DB Link 経由の接続は、経由した DB サーバーの下に接続元の端末・アプリを表示します。Oracle 内部プロセス（ジョブ等）は含みません
+          実行端末 → 実行ファイル → IIS のプール・sqlplus の実行元の順に、ログオン回数（取得できたセッション数）を表示します。DB Link 経由の接続は、DB サーバーの ORACLE.EXE の下に DB Link 接続元 → 接続元のアプリで表示します。Oracle 内部プロセス（ジョブ等）は含みません
         </span>
       </div>
       <form
@@ -59,7 +107,7 @@ export default function CountsPage({ targetId }: { targetId?: number }) {
           setQ(input)
         }}
       >
-        <input className="wide" placeholder="実行端末・アプリ・プール名・実行ファイルで絞り込み" value={input} onChange={(e) => setInput(e.target.value)} />
+        <input className="wide" placeholder="実行端末・アプリ・プール名・実行ファイル・DB Link 接続元で絞り込み" value={input} onChange={(e) => setInput(e.target.value)} />
         <div className="actions">
           <button type="submit" className="primary">
             絞り込み
@@ -72,9 +120,7 @@ export default function CountsPage({ targetId }: { targetId?: number }) {
           <span className="audit-mark">※</span> の件数は、このシステムの履歴がまだ無い期間を DBA_AUDIT_SESSION（監査証跡）のログオン件数で補っています（端末の行のみ。アプリ別には分けられません）。
           {audits.map((a) => (
             <div key={a.targetName} className="muted">
-              {a.targetName}：
-              {a.from && a.lastDay ? `${fmtDate(a.from)} 〜 ${fmtDate(a.lastDay)} を補完` : '補完なし'}
-              （取得 {fmtDateTime(a.fetchedAt)}）
+              {a.targetName}：{a.from && a.lastDay ? `${fmtDate(a.from)} 〜 ${fmtDate(a.lastDay)} を補完` : '補完なし'}（取得 {fmtDateTime(a.fetchedAt)}）
               {a.error && <span className="error-text"> 取得できませんでした：{a.error}</span>}
             </div>
           ))}
@@ -82,7 +128,7 @@ export default function CountsPage({ targetId }: { targetId?: number }) {
       )}
       <section className="card">
         <div className="table-head">
-          <span>{data ? `${groups.length} 端末・${groups.reduce((a, g) => a + g.children.length, 0)} アプリ` : loading ? '読み込み中…' : ''}</span>
+          <span>{data ? `${nodes.length} 端末` : loading ? '読み込み中…' : ''}</span>
         </div>
         <div className="table-wrap">
           <table className="counts tree hover">
@@ -102,82 +148,21 @@ export default function CountsPage({ targetId }: { targetId?: number }) {
                 ))}
               </tr>
             </thead>
-            {groups.map((g) => (
-              <tbody key={`${g.kind}|${g.machine}`} className="tree-group">
-                <tr className="tree-parent" onClick={() => openGroup(g)} title="クリックでセッション履歴を表示">
-                  <td>
-                    {g.kind === 'dblink' ? (
-                      <>
-                        <span className="tree-kind">DB Link 経由</span>
-                        {g.machine || '(不明)'}
-                      </>
-                    ) : (
-                      g.machine || '(不明)'
-                    )}
-                  </td>
-                  <td />
-                  <td className={`num ${g.connected === 0 ? 'zero' : ''}`}>{g.connected}</td>
-                  <td className="nowrap">{fmtDateTime(g.lastSeenAt)}</td>
-                  {columns.map((c, i) => {
-                    const v = g[c.key]
-                    const audit = g.auditPeriods.includes(c.key)
-                    return (
-                      <td
-                        key={c.key}
-                        className={`num ${i >= 7 ? 'sep' : ''} ${v === 0 ? 'zero' : ''}`}
-                        title={audit ? auditTitle : undefined}
-                      >
-                        {audit && <span className="audit-mark">※</span>}
-                        {v.toLocaleString()}
-                      </td>
-                    )
-                  })}
-                </tr>
-                {g.children.map((r, idx) => (
-                  <tr key={`${r.machine}|${r.appName}`} className="tree-child" onClick={() => openRow(r)} title="クリックでセッション履歴を表示">
-                    <td>
-                      <div className="tree-cell">
-                        <span className="tree-line">{idx === g.children.length - 1 ? '└' : '├'}</span>
-                        <div>
-                          {r.linkVia !== null && <div className="tree-origin">{r.machine || '(不明)'}</div>}
-                          <AppCell appName={r.appName} appDetail={r.appDetail} />
-                        </div>
-                      </div>
-                    </td>
-                    <td className="nowrap">{r.owner}</td>
-                    <td className={`num ${r.connected === 0 ? 'zero' : ''}`}>{r.connected}</td>
-                    <td className="nowrap">{fmtDateTime(r.lastSeenAt)}</td>
-                    {columns.map((c, i) => {
-                      const v = r[c.key]
-                      const heat = i < 7 && v > 0 ? 0.08 + (v / max) * 0.5 : 0
-                      return (
-                        <td
-                          key={c.key}
-                          className={`num ${i >= 7 ? 'sep' : ''} ${v === 0 ? 'zero' : ''}`}
-                          style={heat ? { background: `rgb(var(--heat) / ${heat})` } : undefined}
-                        >
-                          {v.toLocaleString()}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            ))}
-            {data && groups.length === 0 && (
-              <tbody>
+            <tbody>
+              {nodes.map((n, i) => renderNode(n, [], i === nodes.length - 1))}
+              {data && nodes.length === 0 && (
                 <tr>
                   <td colSpan={13} className="empty">
                     データがありません
                   </td>
                 </tr>
-              </tbody>
-            )}
-            {groups.length > 0 && (
+              )}
+            </tbody>
+            {nodes.length > 0 && (
               <tfoot>
                 <tr>
                   <td colSpan={2}>合計</td>
-                  <td className="num">{groups.reduce((a, g) => a + g.connected, 0).toLocaleString()}</td>
+                  <td className="num">{nodes.reduce((a, n) => a + n.connected, 0).toLocaleString()}</td>
                   <td />
                   {totals.map((t, i) => (
                     <td key={i} className={`num ${i >= 7 ? 'sep' : ''}`}>

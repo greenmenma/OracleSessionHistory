@@ -16,7 +16,8 @@ public sealed record SessionListItem(
 public sealed record SessionSearch(
     int? TargetId, string? State, string? Q, string? Machine, string? Program, string? Username, string? OsUser,
     string? Kind, DateTime? From, DateTime? To, int Page = 1, int PageSize = 50,
-    string? App = null, bool IncludeInternal = false, bool Exact = false, string? Via = null);
+    string? App = null, bool IncludeInternal = false, bool Exact = false, string? Via = null,
+    string? Host = null, string? LinkSource = null);
 
 /// <summary>セッション履歴の検索 API</summary>
 public static class SessionEndpoints
@@ -131,6 +132,18 @@ public static class SessionEndpoints
             {
                 q = q.Where(x => (x.LinkOriginApp == null && x.Machine == m) || (x.LinkOriginApp != null && x.LinkOriginMachine == m));
             }
+        }
+        // 接続アプリ表の行から遷移した場合：MACHINE の完全一致（DB Link 経由も接続元ではなく DB サーバーの端末で探す）と DB Link 接続元
+        if (!string.IsNullOrWhiteSpace(s.Host))
+        {
+            var host = s.Host.Trim();
+            q = host == UnknownMachine ? q.Where(x => x.Machine == null || x.Machine == "") : q.Where(x => x.Machine == host);
+        }
+        if (!string.IsNullOrWhiteSpace(s.LinkSource))
+        {
+            var source = s.LinkSource.Trim();
+            q = source == UnknownMachine ? q.Where(x => x.LinkOriginApp != null && x.LinkOriginSource == null)
+                : q.Where(x => x.LinkOriginApp != null && x.LinkOriginSource == source);
         }
         // 経由：接続アプリ表の親子の行から遷移した場合。直接の接続だけ、または特定の DB サーバーを経由した DB Link 経由の接続だけにする
         if (!string.IsNullOrWhiteSpace(s.Via))

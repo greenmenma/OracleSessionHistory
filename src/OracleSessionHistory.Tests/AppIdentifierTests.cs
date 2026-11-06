@@ -7,6 +7,24 @@ public class AppIdentifierTests
     private static ClientProcessInfo Proc(string name, string? path, string? cmd, string? pool = null, string? site = null) =>
         new(100, name, path, cmd, null, null, null, pool, site);
 
+    [Theory]
+    [InlineData("w3wp.exe", "IIS: JuchuWeb", "w3wp.exe", "JuchuWeb")]
+    [InlineData(null, "IIS: JuchuWeb", "w3wp.exe", "JuchuWeb")] // DB Link の接続元（PROGRAM 不明）
+    [InlineData("w3wp.exe", "w3wp.exe", "w3wp.exe", null)] // プール未確定
+    [InlineData("sqlplus.exe", "sqlplus.exe: 月次集計.bat", "sqlplus.exe", "月次集計.bat")]
+    [InlineData(null, "SQLPLUS.EXE: cmd.exe", "SQLPLUS.EXE", "cmd.exe")]
+    [InlineData("sqlplus.exe", "sqlplus.exe", "sqlplus.exe", null)]
+    [InlineData("dotnet.exe", "Api.dll", "dotnet.exe", "Api.dll")]
+    [InlineData("販売管理.exe", "販売管理.exe", "販売管理.exe", null)]
+    [InlineData("JDBC Thin Client", "JDBC Thin Client", "JDBC Thin Client", null)]
+    [InlineData("ORACLE.EXE", "ORACLE.EXE", "ORACLE.EXE", null)]
+    [InlineData(null, "(不明)", "(不明)", null)]
+    [InlineData(null, "foo: bar", "foo: bar", null)] // 実行元で区別するツール以外の「: 」は分けない
+    public void 接続アプリ表の段に分ける(string? program, string appName, string exe, string? sub)
+    {
+        Assert.Equal((exe, sub), AppIdentifier.SplitForTree(program, appName));
+    }
+
     [Fact]
     public void w3wpはプール名とサイト()
     {

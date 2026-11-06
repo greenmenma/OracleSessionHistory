@@ -52,6 +52,27 @@ public static partial class AppIdentifier
     private const string IisAppPoolUserPrefix = @"IIS APPPOOL\";
 
     /// <returns>AppName（集計キー・主表示）と AppDetail（補足表示）</returns>
+    /// <summary>
+    /// 接続アプリ表の段に分ける：実行ファイル（w3wp.exe・sqlplus.exe 等）と、その下の区別（IIS のプール・sqlplus の実行元・dll 等）。
+    /// 下の区別が無い場合は null。<paramref name="program"/> は PROGRAM（DB Link の接続元のように不明な場合は null）。
+    /// </summary>
+    public static (string Exe, string? Sub) SplitForTree(string? program, string appName)
+    {
+        var app = appName.Trim();
+        if (app.StartsWith(IisPrefix, StringComparison.Ordinal)) return ("w3wp.exe", NullIfEmpty(app[IisPrefix.Length..]));
+        // sqlplus.exe: 月次集計.bat（実行元でアプリを区別するツール）
+        var colon = app.IndexOf(": ", StringComparison.Ordinal);
+        if (colon > 0 && LaunchedTools.Contains(app[..colon])) return (app[..colon], NullIfEmpty(app[(colon + 2)..]));
+        var prog = program?.Trim();
+        // dotnet.exe で dll 名を確定した行など（取得対象を絞る前に記録したもの）
+        if (!string.IsNullOrEmpty(prog) && !string.Equals(prog, app, StringComparison.OrdinalIgnoreCase)
+            && prog.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            return (prog, app);
+        return (app.Length > 0 ? app : "(不明)", null);
+
+        static string? NullIfEmpty(string s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+    }
+
     public static (string AppName, string? AppDetail) Identify(ClientProcessInfo? process, string? program, string? module, string? osUser)
     {
         if (process is not null && FromProcess(process) is { } fromProcess)

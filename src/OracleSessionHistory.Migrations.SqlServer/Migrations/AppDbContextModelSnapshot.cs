@@ -457,6 +457,10 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("LinkOriginSource")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<DateTime>("LogonTime")
                         .HasColumnType("datetime2");
 

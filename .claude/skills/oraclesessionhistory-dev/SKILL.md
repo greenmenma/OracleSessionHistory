@@ -43,12 +43,12 @@ cd src/OracleSessionHistory.Client && npm run dev       # http://localhost:5173 
 - サマリー：接続数・アプリ数・端末数・履歴数が表示され、5 秒ごとに更新される
 - セッション履歴：検索条件なしで新しいログオン順に表示される。行クリックで詳細
 - ORACLE.EXE のセッションに「DB Linkの可能性」バッジ、詳細に接続元の説明
-- 接続アプリ：親の行が端末、子の行がアプリ（`IIS: プール名` 等）で、本日〜6日前・本日〜1ヶ月・1ヶ月〜2ヶ月の列。Oracle 内部プロセス（ジョブ等）が出ないこと
+- 接続アプリ：端末 → 実行ファイル（w3wp.exe・sqlplus.exe 等）→ プール・実行元の木で、本日〜6日前・本日〜1ヶ月・1ヶ月〜2ヶ月の列。Oracle 内部プロセス（ジョブ等）が出ないこと
 - 接続アプリ：デモの履歴は 3 週間分のため、それより前の列は端末の行に「※」（監査証跡の疑似データで補完）が付き、上部に補完した期間が出る
 - セッション履歴：「アプリ」列にアプリ名と補足。デモでは `DEV-PC07` が「取得失敗」、`ORACLE.EXE (J000)` は「Oracle 内部プロセスも表示」で出る
 - 設定：「プロセス情報の取得」の保存（パスワード欄を触らずに保存しても保持される）。macOS では接続テストが「Windows のみ」になる
 - sqlplus.exe：デモでは `BATCHSV02` が `sqlplus.exe: 月次集計.bat`、`OPE-PC01` が `sqlplus.exe: cmd.exe`。詳細に「実行元」、コマンドラインのパスワードは `********`
-- 接続アプリ：DB Link 接続元を登録すると、「DB Link 経由（DB サーバー）」の親の下に接続元の端末・アプリ（`IIS: JuchuWeb` 等）が出る
+- 接続アプリ：DB Link 接続元（Provider=Demo）を登録すると、`KIKAN-DB01` → `ORACLE.EXE` → DB Link 接続元 → 接続元のアプリ（`w3wp.exe` → `JuchuWeb` 等、補足に接続元の端末）が出る
 - セッション履歴：このシステム自身の接続（デモでは `OracleSessionHistory.Batch.exe`）は既定で出ない
 - DB Link 利用元：DB Link 接続元（Provider=Demo）を登録すると、「実行アプリ」に `IIS: JuchuWeb` 等が出る。セッション履歴の `ORACLE.EXE` の行に「DB Link 経由: アプリ（端末）」
 - 設定：監視対象の追加・接続テスト、DB Link 接続元の追加 → 「DB Link 一覧を取得」→ 選択 → 保存
