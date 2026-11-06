@@ -23,7 +23,9 @@ public static class LinkOriginSync
                     .SetProperty(s => s.LinkOriginMachine, s => s.DbLinkOrigins
                         .OrderByDescending(u => u.LastSeenAt).ThenByDescending(u => u.Id).Select(u => u.Machine).FirstOrDefault())
                     .SetProperty(s => s.LinkOriginApp, s => s.DbLinkOrigins
-                        .OrderByDescending(u => u.LastSeenAt).ThenByDescending(u => u.Id).Select(u => u.AppName).FirstOrDefault()), ct);
+                        .OrderByDescending(u => u.LastSeenAt).ThenByDescending(u => u.Id).Select(u => u.AppName).FirstOrDefault())
+                    .SetProperty(s => s.LinkOriginSource, s => s.DbLinkOrigins
+                        .OrderByDescending(u => u.LastSeenAt).ThenByDescending(u => u.Id).Select(u => u.LinkSource!.Name).FirstOrDefault()), ct);
         }
         return n;
     }
@@ -37,5 +39,6 @@ public static class LinkOriginSync
             .Where(s => s.LinkOriginApp != null && !s.DbLinkOrigins.Any())
             .ExecuteUpdateAsync(x => x
                 .SetProperty(s => s.LinkOriginMachine, (string?)null)
-                .SetProperty(s => s.LinkOriginApp, (string?)null), ct);
+                .SetProperty(s => s.LinkOriginApp, (string?)null)
+                .SetProperty(s => s.LinkOriginSource, (string?)null), ct);
 }

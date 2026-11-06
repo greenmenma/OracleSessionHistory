@@ -154,7 +154,8 @@ public sealed class AppDbMigrationTests : IDisposable
         // 後のマイグレーション（w3wp.exe・sqlplus.exe 以外を対象外にする）の前まで適用する
         await migrator.MigrateAsync(all[all.FindIndex(m => m.EndsWith("_SkipProcessInfoExceptIisAndSqlPlus")) - 1]);
 
-        var sessions = await db.Sessions.OrderBy(s => s.Sid).ToListAsync();
+        // 途中のマイグレーションまでのため、後で追加した列は読まない
+        var sessions = await db.Sessions.OrderBy(s => s.Sid).Select(s => new { s.ProcessKind, s.ProcInfoState }).ToListAsync();
         Assert.Equal([ProcessKinds.Self, ProcessKinds.Self, ProcessKinds.Client], sessions.Select(s => s.ProcessKind));
         Assert.Equal([ProcInfoStates.NotApplicable, ProcInfoStates.NotApplicable, ProcInfoStates.Pending], sessions.Select(s => s.ProcInfoState));
         var usages = await db.DbLinkUsages.OrderBy(u => u.Sid).ToListAsync();
@@ -244,7 +245,9 @@ public sealed class AppDbMigrationTests : IDisposable
         // 後のマイグレーション（w3wp.exe・sqlplus.exe 以外を対象外にする）の影響を受けないよう、このマイグレーションまで適用する
         await migrator.MigrateAsync(all.Single(m => m.EndsWith("_AddAncestryAndLinkOrigin")));
 
-        var s = await db.Sessions.OrderBy(x => x.Id).ToListAsync();
+        // 途中のマイグレーションまでのため、後で追加した列は読まない
+        var s = await db.Sessions.OrderBy(x => x.Id)
+            .Select(x => new { x.ProcInfoState, x.ProcInfoError, x.Machine, x.ProcCommandLine, x.LinkOriginMachine, x.LinkOriginApp }).ToListAsync();
         Assert.Equal((ProcInfoStates.Pending, (string?)null, "WEB01"), (s[0].ProcInfoState, s[0].ProcInfoError, s[0].Machine));
         Assert.Equal(ProcInfoStates.NotApplicable, s[3].ProcInfoState); // 切断済みはそのまま
         Assert.Null(s[1].ProcCommandLine);
@@ -290,6 +293,36 @@ public sealed class AppDbMigrationTests : IDisposable
         var u = await db.DbLinkUsages.OrderBy(x => x.Id).ToListAsync();
         Assert.Equal((ProcInfoStates.NotApplicable, (string?)null), (u[0].ProcInfoState, u[0].ProcInfoError));
         Assert.Equal(ProcInfoStates.Failed, u[1].ProcInfoState);
+    }
+
+    [Fact]
+    public async Task 接続元を特定済みのセッションにDBLink接続元の名前を入れる()
+    {
+        await using var db = new AppDbContext(_sqliteOptions);
+        var migrator = db.GetService<IMigrator>();
+        var all = db.Database.GetMigrations().ToList();
+        await migrator.MigrateAsync(all[all.FindIndex(m => m.EndsWith("_AddLinkOriginSource")) - 1]);
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO Targets (Id, Name, Provider, ConnectionString, IntervalSeconds, LinkIntervalSeconds, IncludeBackground, CollectSqlText, Enabled, CreatedAt, UpdatedAt, ConsecutiveFailures) " +
+            "VALUES (1, 'T', 'Oracle', 'x', 5, 30, 0, 1, 1, '2026-11-01 00:00:00', '2026-11-01 00:00:00', 0)");
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO Sessions (Id, TargetId, InstId, Sid, Serial, LogonTime, Machine, Program, ProcessKind, AppName, ProcInfoState, LinkOriginMachine, LinkOriginApp, FirstSeenAt, LastSeenAt, IsConnected, DisconnectUncertain) VALUES " +
+            "(1, 1, 1, 1, 1, '2026-11-01 09:00:00', 'KIKAN-DB01', 'ORACLE.EXE', 'DbLinkSuspect', 'ORACLE.EXE', 'NotApplicable', 'KIKAN-AP01', 'IIS: Juchu', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1, 0), " +
+            "(2, 1, 1, 2, 1, '2026-11-01 09:00:00', 'KIKAN-DB01', 'ORACLE.EXE', 'DbLinkSuspect', 'ORACLE.EXE', 'NotApplicable', NULL, NULL, '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1, 0)");
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO LinkSources (Id, TargetId, Name, Provider, ConnectionString, Enabled, SelectedLinks, CreatedAt, UpdatedAt) VALUES " +
+            "(1, 1, '古いDB', 'Oracle', 'y', 1, '[]', '2026-11-01 00:00:00', '2026-11-01 00:00:00'), " +
+            "(2, 1, '基幹DB', 'Oracle', 'y', 1, '[]', '2026-11-01 00:00:00', '2026-11-01 00:00:00')");
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO DbLinkUsages (LinkSourceId, TargetId, DbLinkName, MatchType, InstId, Sid, Serial, LogonTime, AppName, ProcInfoState, MatchedSessionId, FirstSeenAt, LastSeenAt, HitCount) VALUES " +
+            "(1, 1, '(PROCESS)', 'PROCESS', 1, 1, 1, '2026-11-01 09:00:00', 'x', 'Resolved', 1, '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1), " +
+            "(2, 1, '(PROCESS)', 'PROCESS', 1, 2, 1, '2026-11-01 09:00:00', 'IIS: Juchu', 'Resolved', 1, '2026-11-01 09:00:00', '2026-11-01 10:00:00', 1)");
+
+        await migrator.MigrateAsync();
+
+        var s = await db.Sessions.OrderBy(x => x.Id).ToListAsync();
+        Assert.Equal("基幹DB", s[0].LinkOriginSource); // 最後に観測した利用元
+        Assert.Null(s[1].LinkOriginSource);
     }
 
     /// <summary>マイグレーション導入前（EnsureCreated）の DB を再現する：Initial のスキーマを作り、履歴テーブルを消す</summary>

@@ -104,14 +104,15 @@ td.empty { text-align: center; color: var(--muted); padding: 24px; }
 .th-sub { font-weight: 400; color: var(--muted); font-size: 11px; }
 table.counts td.zero { color: var(--muted); opacity: .5; }
 table.counts .sep { border-left: 2px solid var(--border); }
-/* 接続アプリ表の親子（親：端末・DB Link 経由、子：アプリ） */
-table.tree tbody.tree-group tr.tree-parent td { background: var(--surface-2); font-weight: 600; border-top: 2px solid var(--border); }
-table.tree tbody.tree-group tr.tree-parent:hover td { filter: brightness(0.97); }
-table.tree tr.tree-child td:first-child { padding-left: 14px; }
-.tree-cell { display: flex; align-items: flex-start; gap: 6px; }
-.tree-line { color: var(--muted); font-family: ui-monospace, monospace; line-height: 1.4; }
+/* 接続アプリ表の木（端末 → 実行ファイル → プール・実行元、ORACLE.EXE → DB Link → 接続元のアプリ） */
+table.tree tr.tree-machine td { background: var(--surface-2); font-weight: 700; border-top: 2px solid var(--border); }
+table.tree tr.tree-exe td:first-child .tree-name { font-weight: 600; }
+table.tree tr.tree-other td:first-child .tree-name { color: var(--muted); font-style: italic; }
+.tree-cell { display: flex; align-items: flex-start; }
+.tree-line { color: var(--muted); font-family: ui-monospace, monospace; white-space: pre; line-height: 1.5; }
+.tree-label { min-width: 120px; max-width: 420px; }
+.tree-name { overflow-wrap: anywhere; }
 .tree-kind { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); }
-.tree-origin { font-size: 11px; color: var(--muted); }
 .audit-mark { color: var(--muted); font-size: 10px; margin-right: 2px; font-weight: 400; }
 .audit-note { margin-bottom: 12px; font-size: 12px; }
 tfoot td { font-weight: 700; background: var(--surface-2); }

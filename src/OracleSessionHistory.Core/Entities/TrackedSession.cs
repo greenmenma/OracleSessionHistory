@@ -87,6 +87,8 @@ public class TrackedSession : IProcessInfoRecord
     /// </summary>
     public string? LinkOriginMachine { get; set; }
     public string? LinkOriginApp { get; set; }
+    /// <summary>接続元を特定した DB Link 接続元（LinkSource）の名前。接続アプリ表の「DB Link」の段に使う</summary>
+    public string? LinkOriginSource { get; set; }
     public string? IisAppPool { get; set; }
     public string? IisSite { get; set; }
 

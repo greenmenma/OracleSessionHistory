@@ -24,6 +24,12 @@ interface Filters {
   exact: boolean
   /** 経由（接続アプリ表の親子の行からの遷移）：direct は直接の接続のみ、それ以外は経由した DB サーバーの DB Link 経由の接続のみ */
   via: string
+  /** 接続アプリ表の行からの遷移：MACHINE の完全一致（DB Link 経由も DB サーバーの端末で探す） */
+  host: string
+  /** 接続アプリ表の行からの遷移：実行ファイル（PROGRAM） */
+  exe: string
+  /** 接続アプリ表の行からの遷移：DB Link 接続元の名前 */
+  linkSource: string
 }
 
 type BoolKey = 'includeInternal' | 'exact'
@@ -50,7 +56,22 @@ function fromQuery(query: URLSearchParams): Filters {
     includeInternal: query.get('includeInternal') === 'true',
     exact: query.get('exact') === 'true',
     via: query.get('via') ?? '',
+    host: query.get('host') ?? '',
+    exe: query.get('exe') ?? '',
+    linkSource: query.get('linkSource') ?? '',
   }
+}
+
+/** 接続アプリ表の行から渡された条件（画面に入力欄は無く、バッジで表示する） */
+const treeKeys = ['host', 'exe', 'via', 'linkSource'] as const
+
+function treeLabels(f: Filters): string[] {
+  const labels: string[] = []
+  if (f.host) labels.push(`端末 ${f.host}`)
+  if (f.exe) labels.push(`実行ファイル ${f.exe}`)
+  if (f.via) labels.push(viaLabel(f.via))
+  if (f.linkSource) labels.push(`DB Link 接続元 ${f.linkSource}`)
+  return labels
 }
 
 function viaLabel(via: string): string {
@@ -86,6 +107,8 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
         to: filters.to || undefined,
         includeInternal: filters.includeInternal || undefined,
         exact: filters.exact || undefined,
+        exe: undefined,
+        program: filters.exe || undefined,
         page,
         pageSize: 50,
       }),
@@ -108,7 +131,7 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
   const set = (k: Exclude<keyof Filters, BoolKey>) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     // 接続アプリから開いた（完全一致の）状態で端末・アプリを書き換えたら、部分一致で探したいものとして完全一致を外す
     // 経由の条件も、接続アプリの行に合わせたものなので外す
-    setForm({ ...form, [k]: e.target.value, ...(k === 'machine' || k === 'app' ? { exact: false, via: '' } : {}) })
+    setForm({ ...form, [k]: e.target.value, ...(k === 'machine' || k === 'app' ? { exact: false, via: '', host: '', exe: '', linkSource: '' } : {}) })
 
   const search = (e: React.FormEvent) => {
     e.preventDefault()
@@ -178,13 +201,22 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
           <input type="checkbox" checked={form.exact} onChange={setBool('exact', false)} />
           端末・アプリを完全一致
         </label>
-        {form.via && (
-          <span className="inline">
-            <span className="badge gray">{viaLabel(form.via)}</span>
-            <button type="button" onClick={() => {
-                setForm({ ...form, via: '' })
-                apply({ ...filters, via: '' })
-              }} title="経由の条件を外す">
+        {treeLabels(form).length > 0 && (
+          <span className="inline" title="接続アプリの行から開いた条件">
+            {treeLabels(form).map((l) => (
+              <span key={l} className="badge gray">
+                {l}
+              </span>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                const cleared = Object.fromEntries(treeKeys.map((k) => [k, ''])) as Pick<Filters, (typeof treeKeys)[number]>
+                setForm({ ...form, ...cleared })
+                apply({ ...filters, ...cleared })
+              }}
+              title="接続アプリから開いた条件を外す"
+            >
               ✕
             </button>
           </span>
