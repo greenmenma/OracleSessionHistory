@@ -74,7 +74,7 @@ dotnet ef migrations add <名前> --project src/OracleSessionHistory.Migrations.
 | PUT/DELETE | `/api/targets/{id}` | 監視対象の更新・削除 |
 | POST | `/api/targets/test` | 接続テスト |
 | GET | `/api/summary?targetId=` | サマリー |
-| GET | `/api/sessions?...` | セッション履歴の検索 |
+| GET | `/api/sessions?...` | セッション履歴の検索（`source=dblink` で DB Link 利用元、`source=all` で両方。行は `type` が `session` / `dblink`） |
 | GET | `/api/sessions/{id}` | セッション詳細（DB Link 接続元を含む） |
 | GET | `/api/connection-counts?targetId=&q=` | 接続アプリ表（端末 × アプリ） |
 | GET/PUT | `/api/process-settings` | プロセス情報取得の設定（パスワードは返さない） |
@@ -82,4 +82,3 @@ dotnet ef migrations add <名前> --project src/OracleSessionHistory.Migrations.
 | GET/POST | `/api/targets/{id}/link-sources` | DB Link 接続元の一覧・追加 |
 | PUT/DELETE | `/api/link-sources/{id}` | DB Link 接続元の更新・削除 |
 | POST | `/api/db-links` | 接続文字列から DB Link 一覧を取得 |
-| GET | `/api/db-link-usages?...` | DB Link 利用元の一覧 |

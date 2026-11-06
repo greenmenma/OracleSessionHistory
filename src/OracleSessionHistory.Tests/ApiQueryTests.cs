@@ -357,6 +357,39 @@ public sealed class ApiQueryTests : IDisposable
         Assert.Equal("KIKAN-DB01", Find("KIKAN-AP02", "在庫照会.exe", "KIKAN-DB01").Single().Machine);
         Assert.Equal("KIKAN-DB02", Find(null, null, "KIKAN-DB02").Single().Machine);
     }
+
+    [Fact]
+    public void DB_Link利用元はセッションと共通の条件で探す()
+    {
+        var l = new LinkSource { TargetId = _targetId, Name = "基幹DB", ConnectionString = "y" };
+        _db.LinkSources.Add(l);
+        _db.SaveChanges();
+        void AddUsage(int sid, string machine, string app, string? owner = null) => _db.DbLinkUsages.Add(new DbLinkUsage
+        {
+            LinkSourceId = l.Id, TargetId = _targetId, DbLinkName = "TO_DB01", InstId = 1, Sid = sid, Serial = 1, LogonTime = Today,
+            Machine = machine, AppName = app, ProcOwner = owner, FirstSeenAt = Today, LastSeenAt = Today.AddMinutes(1),
+        });
+        AddUsage(1, "AP01", "IIS: Pool", "CORP\\yamada");
+        AddUsage(2, "AP011", "在庫照会.exe");
+        _db.SaveChanges();
+
+        List<DbLinkUsage> Find(SessionSearch s) => SessionEndpoints.FilterUsages(_db.DbLinkUsages, s).ToList();
+        Assert.Equal(2, Find(new SessionSearch(null, null, null, "AP01", null, null, null, null, null, null)).Count);
+        Assert.Equal(1, Find(new SessionSearch(null, null, null, "AP01", null, null, null, null, null, null, Exact: true)).Single().Sid);
+        Assert.Equal(2, Find(new SessionSearch(null, null, null, null, null, null, null, null, null, null, App: "在庫")).Single().Sid);
+        Assert.Equal(1, Find(new SessionSearch(null, null, "yamada", null, null, null, null, null, null, null)).Single().Sid);
+        Assert.Equal(2, Find(new SessionSearch(null, null, "基幹", null, null, null, null, null, null, null)).Count); // 接続元 DB の名前
+        Assert.Empty(Find(new SessionSearch(null, null, null, null, null, null, null, null, Today.AddDays(1), null)));
+    }
+
+    [Fact]
+    public void すべてを表示する場合はセッションだけの条件でDB_Link利用元を除く()
+    {
+        Assert.False(SessionEndpoints.HasSessionOnlyCondition(new SessionSearch(null, null, "x", "AP01", null, "u", "o", null, null, null, App: "a", Exact: true)));
+        Assert.True(SessionEndpoints.HasSessionOnlyCondition(new SessionSearch(null, "connected", null, null, null, null, null, null, null, null)));
+        Assert.True(SessionEndpoints.HasSessionOnlyCondition(new SessionSearch(null, null, null, null, null, null, null, ProcessKinds.Client, null, null)));
+        Assert.True(SessionEndpoints.HasSessionOnlyCondition(new SessionSearch(null, null, null, null, null, null, null, null, null, null, Via: "direct")));
+    }
 }
 
 public class ApiQuerySqlServerTests
@@ -407,6 +440,17 @@ public class ApiQuerySqlServerTests
             AppDbProviders.SqlServer, "Server=localhost;Database=x;Integrated Security=true;TrustServerCertificate=true").Options);
         var sql = SessionEndpoints.Project(db.Sessions).ToQueryString();
         Assert.Contains("[LinkOriginApp]", sql);
+    }
+
+    [Fact]
+    public void DB_Link利用元の検索はSqlServerでも変換できる()
+    {
+        using var db = new AppDbContext((DbContextOptions<AppDbContext>)AppDatabase.Configure(new DbContextOptionsBuilder<AppDbContext>(),
+            AppDbProviders.SqlServer, "Server=localhost;Database=x;Integrated Security=true;TrustServerCertificate=true").Options);
+        var sql = SessionEndpoints.FilterUsages(db.DbLinkUsages,
+            new SessionSearch(1, null, "foo", "AP01", "w3wp", "u", "山田", null, new DateTime(2026, 11, 1), null, App: "IIS", Exact: true),
+            db.DirectoryUsers).ToQueryString();
+        Assert.Contains("[d].[Machine] = ", sql);
     }
 }
 

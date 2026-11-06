@@ -93,6 +93,11 @@ export interface SessionListItem {
   linkOriginUser: string | null
 }
 
+/** セッション履歴の 1 行：監視対象のセッション、または DB Link 接続元 DB 上の DB Link 利用元 */
+export type SessionRow =
+  | { type: 'session'; targetName: string; logonTime: string; session: SessionListItem; usage: null }
+  | { type: 'dblink'; targetName: string; logonTime: string; session: null; usage: DbLinkUsage }
+
 /** プロセス情報の取得状態 */
 export type ProcInfoState = 'Pending' | 'Resolved' | 'NotFound' | 'Mismatch' | 'Failed' | 'NotApplicable'
 
@@ -356,7 +361,7 @@ export const api = {
 
   summary: (targetId?: number) => request<Summary>('GET', `api/summary${qs({ targetId })}`),
   sessions: (params: Record<string, string | number | boolean | undefined>) =>
-    request<Paged<SessionListItem>>('GET', `api/sessions${qs(params)}`),
+    request<Paged<SessionRow>>('GET', `api/sessions${qs(params)}`),
   session: (id: number) => request<SessionDetail>('GET', `api/sessions/${id}`),
   /** 実行ユーザの表示名（アカウントを大文字にした値 → AD の displayName） */
   userNames: () => request<Record<string, string>>('GET', 'api/user-names'),
@@ -378,6 +383,4 @@ export const api = {
   updateProcessSettings: (s: ProcessSettingsInput) => request<ProcessSettings>('PUT', 'api/process-settings', s),
   testProcessSettings: (host: string, settings: ProcessSettingsInput) =>
     request<{ success: boolean; message: string }>('POST', 'api/process-settings/test', { host, settings }),
-  dbLinkUsages: (params: Record<string, string | number | undefined>) =>
-    request<Paged<DbLinkUsage>>('GET', `api/db-link-usages${qs(params)}`),
 }

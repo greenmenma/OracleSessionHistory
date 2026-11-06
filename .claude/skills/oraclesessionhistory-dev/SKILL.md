@@ -43,7 +43,7 @@ cd src/OracleSessionHistory.Client && npm run dev       # http://localhost:5173 
 - サマリー：接続数・アプリ数・端末数・履歴数が表示され、5 秒ごとに更新される
 - セッション履歴：検索条件なしで新しいログオン順に表示される。行クリックで詳細
 - ORACLE.EXE のセッションに「DB Linkの可能性」バッジ、詳細に接続元の説明
-- 接続アプリ：端末 → 実行ファイル（w3wp.exe・sqlplus.exe 等）→ プール・実行元の木で、本日〜6日前・本日〜1ヶ月・1ヶ月〜2ヶ月の列。Oracle 内部プロセス（ジョブ等）が出ないこと
+- 接続アプリ（サマリーの下）：端末 → 実行ファイル（w3wp.exe・sqlplus.exe 等）→ プール・実行元の木で、本日〜6日前・本日〜1ヶ月・1ヶ月〜2ヶ月の列。Oracle 内部プロセス（ジョブ等）が出ないこと
 - 接続アプリ：デモの履歴は 3 週間分のため、それより前の列は端末の行に「※」（監査証跡の疑似データで補完）が付き、上部に補完した期間が出る
 - セッション履歴：「アプリ」列にアプリ名と補足。デモでは `DEV-PC07` が「取得失敗」、`ORACLE.EXE (J000)` は「Oracle 内部プロセスも表示」で出る
 - 設定：「プロセス情報の取得」の保存（パスワード欄を触らずに保存しても保持される）。macOS では接続テストが「Windows のみ」になる
@@ -51,7 +51,7 @@ cd src/OracleSessionHistory.Client && npm run dev       # http://localhost:5173 
 - 接続アプリ：DB Link 接続元（Provider=Demo）を登録すると、`KIKAN-DB01` → `ORACLE.EXE` → DB Link 接続元 → 接続元の端末（`KIKAN-AP01` 等）→ 接続元のアプリ（`w3wp.exe` → `JuchuWeb` 等）が出る
 - 実行ユーザ：macOS ではデモの疑似ディレクトリにより `yamada` が「山田 太郎」等の表示名で出る。セッション履歴の「実行ユーザ」に「山田」と入れて検索できる
 - セッション履歴：このシステム自身の接続（デモでは `OracleSessionHistory.Batch.exe`）は既定で出ない
-- DB Link 利用元：DB Link 接続元（Provider=Demo）を登録すると、「実行アプリ」に `IIS: JuchuWeb` 等が出る。セッション履歴の `ORACLE.EXE` の行に「DB Link 経由: アプリ（端末）」
+- セッション履歴の「対象：DB Link利用元」：DB Link 接続元（Provider=Demo）を登録すると、「アプリ」に `IIS: JuchuWeb` 等が出る。セッション履歴の `ORACLE.EXE` の行に「DB Link 経由: アプリ（端末）」
 - 設定：監視対象の追加・接続テスト、DB Link 接続元の追加 → 「DB Link 一覧を取得」→ 選択 → 保存
 - API の確認: `curl http://localhost:<client-port>/api/summary`
 - サブフォルダ配置の確認（IIS の代わり）: `dotnet publish src/OracleSessionHistory.Server -c Release -o <出力先>`（Client も wwwroot に配置される）後、出力先で `PathBase=/OracleSessionHistory` を指定して `dotnet OracleSessionHistory.Server.dll` を起動し、`/OracleSessionHistory/` で画面と API が動くこと

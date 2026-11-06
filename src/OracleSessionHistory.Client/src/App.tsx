@@ -3,15 +3,11 @@ import { api, type Target } from './api'
 import { useRoute, navigate } from './router'
 import SummaryPage from './pages/SummaryPage'
 import SessionsPage from './pages/SessionsPage'
-import CountsPage from './pages/CountsPage'
-import DbLinkPage from './pages/DbLinkPage'
 import SettingsPage from './pages/SettingsPage'
 
 const menus = [
   { path: '/', label: 'サマリー' },
   { path: '/sessions', label: 'セッション履歴' },
-  { path: '/counts', label: '接続アプリ' },
-  { path: '/dblinks', label: 'DB Link利用元' },
   { path: '/settings', label: '設定' },
 ]
 
@@ -51,12 +47,6 @@ export default function App() {
   switch (route.path) {
     case '/sessions':
       page = <SessionsPage targetId={effectiveTargetId} query={route.query} />
-      break
-    case '/counts':
-      page = <CountsPage targetId={effectiveTargetId} />
-      break
-    case '/dblinks':
-      page = <DbLinkPage targetId={effectiveTargetId} />
       break
     case '/settings':
       page = <SettingsPage onChanged={loadTargets} />

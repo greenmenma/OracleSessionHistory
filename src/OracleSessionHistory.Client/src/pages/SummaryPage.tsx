@@ -2,6 +2,7 @@ import { api } from '../api'
 import { useAsync } from '../hooks'
 import { fmtDateTime } from '../format'
 import { navigate } from '../router'
+import ConnectionCountsSection from '../components/ConnectionCountsSection'
 
 export default function SummaryPage({ targetId }: { targetId?: number }) {
   const { data, error } = useAsync(() => api.summary(targetId), [targetId], 5000)
@@ -16,7 +17,7 @@ export default function SummaryPage({ targetId }: { targetId?: number }) {
 
       <div className="tiles">
         <Tile label="接続数" value={data?.connections} onClick={() => navigate('/sessions', { state: 'connected' })} />
-        <Tile label="アプリ数" value={data?.apps} note="接続中のアプリ（IIS プール・exe 等）" onClick={() => navigate('/counts')} />
+        <Tile label="アプリ数" value={data?.apps} note="接続中のアプリ（IIS プール・exe 等）" onClick={() => document.getElementById('connection-counts')?.scrollIntoView({ behavior: 'smooth' })} />
         <Tile label="端末数" value={data?.terminals} note="接続中の実行端末" />
         <Tile label="履歴数" value={data?.history} note="切断済みセッション" onClick={() => navigate('/sessions', { state: 'disconnected' })} />
       </div>
@@ -91,6 +92,8 @@ export default function SummaryPage({ targetId }: { targetId?: number }) {
         <Ranking title="接続数の多いアプリ" items={data?.topApps} param="app" />
         <Ranking title="接続数の多い端末" items={data?.topMachines} param="machine" />
       </div>
+
+      <ConnectionCountsSection targetId={targetId} />
     </div>
   )
 }
