@@ -469,6 +469,10 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("LinkOriginUser")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("LogonTime")
                         .HasColumnType("TEXT");
 

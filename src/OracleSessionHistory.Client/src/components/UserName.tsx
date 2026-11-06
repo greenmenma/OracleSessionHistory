@@ -59,3 +59,24 @@ export default function UserName({ account }: { account: string | null | undefin
   const name = displayNameOf(map, account)
   return name ? <span title={account}>{name}</span> : <>{account}</>
 }
+
+/**
+ * 実行ユーザ（複数）を表示名とアカウントの 2 行で表示する。複数の場合は先頭（最も多いユーザ）と「他 N 名」、
+ * ツールチップに全員を出す
+ */
+export function UserList({ accounts }: { accounts: string[] }) {
+  const map = useUserNames()
+  if (accounts.length === 0) return null
+  const first = accounts[0]
+  const name = displayNameOf(map, first)
+  const all = accounts.map((a) => userLabel(map, a)).join('\n')
+  return (
+    <div className="user-cell" title={all}>
+      <div>
+        {name ?? first}
+        {accounts.length > 1 && <span className="muted"> 他 {accounts.length - 1} 名</span>}
+      </div>
+      {name && <div className="app-detail">{first}</div>}
+    </div>
+  )
+}

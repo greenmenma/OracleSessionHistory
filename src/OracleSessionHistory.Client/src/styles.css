@@ -115,6 +115,7 @@ table.tree tr.tree-other td:first-child .tree-name { color: var(--muted); font-s
 .tree-label { min-width: 120px; max-width: 420px; }
 .tree-name { overflow-wrap: anywhere; }
 .tree-kind { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); }
+.user-cell { font-weight: 400; }
 .audit-mark { color: var(--muted); font-size: 10px; margin-right: 2px; font-weight: 400; }
 .audit-note { margin-bottom: 12px; font-size: 12px; }
 tfoot td { font-weight: 700; background: var(--surface-2); }
