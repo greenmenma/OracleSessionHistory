@@ -17,7 +17,10 @@ public sealed record SessionSearch(
     int? TargetId, string? State, string? Q, string? Machine, string? Program, string? Username, string? OsUser,
     string? Kind, DateTime? From, DateTime? To, int Page = 1, int PageSize = 50,
     string? App = null, bool IncludeInternal = false, bool Exact = false, string? Via = null,
-    string? Host = null, string? LinkSource = null, string? Origin = null);
+    string? Host = null, string? LinkSource = null, string? Origin = null, string? Source = null);
+
+/// <summary>セッション履歴の 1 行。監視対象のセッション（session）か、DB Link 接続元 DB 上の DB Link 利用元（dblink）</summary>
+public sealed record SessionRow(string Type, string TargetName, DateTime LogonTime, SessionListItem? Session, DbLinkUsageDto? Usage);
 
 /// <summary>セッション履歴の検索 API</summary>
 public static class SessionEndpoints
@@ -27,6 +30,12 @@ public static class SessionEndpoints
 
     /// <summary>経由の条件（<see cref="SessionSearch.Via"/>）で、DB Link 経由ではない（直接の）接続を表す値。それ以外の値は経由した DB サーバー</summary>
     public const string DirectVia = "direct";
+
+    /// <summary>一覧に出すもの（<see cref="SessionSearch.Source"/>）：DB Link 利用元のみ</summary>
+    public const string DbLinkSource = "dblink";
+
+    /// <summary>一覧に出すもの（<see cref="SessionSearch.Source"/>）：セッションと DB Link 利用元の両方</summary>
+    public const string AllSource = "all";
 
     /// <summary>一覧の 1 行（DB Link の可能性がある行は、特定できた接続元のアプリも含める）</summary>
     internal static IQueryable<SessionListItem> Project(IQueryable<TrackedSession> q) =>
@@ -43,18 +52,46 @@ public static class SessionEndpoints
     {
         var g = app.MapGroup("/api");
 
+        // セッション履歴。Source により監視対象のセッションと DB Link 利用元を同じ一覧（ログオンが新しい順）で返す
         g.MapGet("/sessions", async ([AsParameters] SessionSearch s, AppDbContext db) =>
         {
-            var q = Filter(db.Sessions.AsNoTracking(), s, db.DirectoryUsers);
             var pageSize = Math.Clamp(s.PageSize, 1, 500);
             var page = Math.Max(1, s.Page);
-            var total = await q.CountAsync();
-            var items = await Project(q
-                    .OrderByDescending(x => x.LogonTime) // 最新のログオンを上位に
-                    .ThenByDescending(x => x.Id)
-                    .Skip((page - 1) * pageSize).Take(pageSize))
-                .ToListAsync();
-            return new PagedResult<SessionListItem>(items, total, page, pageSize);
+            var skip = (page - 1) * pageSize;
+            var withSessions = s.Source != DbLinkSource;
+            var withUsages = s.Source == DbLinkSource || (s.Source == AllSource && !HasSessionOnlyCondition(s));
+
+            var sq = Filter(db.Sessions.AsNoTracking(), s, db.DirectoryUsers);
+            var uq = FilterUsages(db.DbLinkUsages.AsNoTracking(), s, db.DirectoryUsers);
+            var sessionTotal = withSessions ? await sq.CountAsync() : 0;
+            var usageTotal = withUsages ? await uq.CountAsync() : 0;
+
+            // 両方を出す場合は、それぞれの先頭から skip + pageSize 件を取り、ログオン順に並べ直してページを切り出す
+            var take = withSessions && withUsages ? skip + pageSize : pageSize;
+            var from = withSessions && withUsages ? 0 : skip;
+            var rows = new List<SessionRow>();
+            if (withSessions)
+            {
+                var items = await Project(sq.OrderByDescending(x => x.LogonTime) // 最新のログオンを上位に
+                        .ThenByDescending(x => x.Id).Skip(from).Take(take))
+                    .ToListAsync();
+                rows.AddRange(items.Select(x => new SessionRow("session", x.TargetName, x.LogonTime, x, null)));
+            }
+            if (withUsages)
+            {
+                var targetNames = await db.Targets.AsNoTracking().ToDictionaryAsync(t => t.Id, t => t.Name);
+                var items = await uq.OrderByDescending(u => u.LogonTime).ThenByDescending(u => u.Id).Skip(from).Take(take)
+                    .Select(u => new { u.TargetId, Dto = DbLinkUsageDto.From(u, u.LinkSource!.Name) })
+                    .ToListAsync();
+                rows.AddRange(items.Select(x => new SessionRow("dblink", targetNames.GetValueOrDefault(x.TargetId, ""), x.Dto.LogonTime, null, x.Dto)));
+            }
+            if (withSessions && withUsages)
+            {
+                rows = rows.OrderByDescending(r => r.LogonTime).ThenBy(r => r.Type)
+                    .ThenByDescending(r => r.Session?.Id ?? r.Usage!.Id)
+                    .Skip(skip).Take(pageSize).ToList();
+            }
+            return new PagedResult<SessionRow>(rows, sessionTotal + usageTotal, page, pageSize);
         });
 
         // 実行ユーザの表示名（AD の displayName）。画面はアカウントの代わりに表示名を出す（キーはアカウントを大文字にした値）
@@ -91,6 +128,66 @@ public static class SessionEndpoints
             var hasLinkSource = await db.LinkSources.AnyAsync(l => l.TargetId == s.TargetId);
             return Results.Ok(new { session = s, targetName, origins, candidates, hasLinkSource });
         });
+    }
+
+    /// <summary>
+    /// 監視対象のセッションにしか無い条件（状態・種別・Oracle 内部プロセス・接続アプリ表の行の条件）があるか。
+    /// 「すべて」を表示する場合、これらの条件があれば DB Link 利用元は出さない
+    /// </summary>
+    internal static bool HasSessionOnlyCondition(SessionSearch s) =>
+        !string.IsNullOrWhiteSpace(s.State) || !string.IsNullOrWhiteSpace(s.Kind) || s.IncludeInternal
+        || !string.IsNullOrWhiteSpace(s.Via) || !string.IsNullOrWhiteSpace(s.Host)
+        || !string.IsNullOrWhiteSpace(s.LinkSource) || !string.IsNullOrWhiteSpace(s.Origin);
+
+    /// <summary>DB Link 利用元（接続元 DB 上で DB Link を使っていたセッション）の検索。セッションと共通の条件だけを使う</summary>
+    /// <param name="users">実行ユーザの表示名（AD）。指定するとキーワード・実行ユーザの条件で表示名も探す</param>
+    internal static IQueryable<DbLinkUsage> FilterUsages(IQueryable<DbLinkUsage> q, SessionSearch s, IQueryable<DirectoryUser>? users = null)
+    {
+        var none = q.Where(x => false).Select(x => "");
+        IQueryable<string> NamedAccounts(string pattern) =>
+            users?.Where(d => d.Found && EF.Functions.Like(d.DisplayName, pattern, "\\")).Select(d => d.Account) ?? none;
+        if (s.TargetId is { } tid) q = q.Where(x => x.TargetId == tid);
+        if (!string.IsNullOrWhiteSpace(s.Q))
+        {
+            var p = QueryHelpers.Contains(s.Q.Trim());
+            var named = NamedAccounts(p);
+            q = q.Where(x =>
+                EF.Functions.Like(x.Machine, p, "\\") || EF.Functions.Like(x.Program, p, "\\") ||
+                EF.Functions.Like(x.Username, p, "\\") || EF.Functions.Like(x.SchemaName, p, "\\") ||
+                EF.Functions.Like(x.OsUser, p, "\\") || EF.Functions.Like(x.Module, p, "\\") ||
+                EF.Functions.Like(x.Action, p, "\\") || EF.Functions.Like(x.Terminal, p, "\\") ||
+                EF.Functions.Like(x.DbLinkName, p, "\\") || EF.Functions.Like(x.SqlText, p, "\\") ||
+                EF.Functions.Like(x.AppName, p, "\\") || EF.Functions.Like(x.AppDetail, p, "\\") ||
+                EF.Functions.Like(x.ProcPath, p, "\\") || EF.Functions.Like(x.ProcCommandLine, p, "\\") ||
+                EF.Functions.Like(x.ProcOwner, p, "\\") || EF.Functions.Like(x.ProcAncestry, p, "\\") ||
+                EF.Functions.Like(x.LinkSource!.Name, p, "\\") ||
+                named.Contains(x.OsUser!.Trim().ToUpper()) || named.Contains(x.ProcOwner!.Trim().ToUpper()));
+        }
+        if (!string.IsNullOrWhiteSpace(s.Machine))
+        {
+            var m = s.Machine.Trim();
+            q = !s.Exact ? q.Where(x => EF.Functions.Like(x.Machine, QueryHelpers.Contains(m), "\\"))
+                : m == UnknownMachine ? q.Where(x => x.Machine == null || x.Machine == "")
+                : q.Where(x => x.Machine == m);
+        }
+        if (!string.IsNullOrWhiteSpace(s.Program)) q = q.Where(x => EF.Functions.Like(x.Program, QueryHelpers.Contains(s.Program.Trim()), "\\"));
+        if (!string.IsNullOrWhiteSpace(s.Username)) q = q.Where(x => EF.Functions.Like(x.Username, QueryHelpers.Contains(s.Username.Trim()), "\\"));
+        if (!string.IsNullOrWhiteSpace(s.OsUser))
+        {
+            var p = QueryHelpers.Contains(s.OsUser.Trim());
+            var named = NamedAccounts(p);
+            q = q.Where(x => EF.Functions.Like(x.OsUser, p, "\\") || EF.Functions.Like(x.ProcOwner, p, "\\")
+                             || named.Contains(x.OsUser!.Trim().ToUpper()) || named.Contains(x.ProcOwner!.Trim().ToUpper()));
+        }
+        if (!string.IsNullOrWhiteSpace(s.App))
+        {
+            var app = s.App.Trim();
+            q = s.Exact ? q.Where(x => x.AppName == app) : q.Where(x => EF.Functions.Like(x.AppName, QueryHelpers.Contains(app), "\\"));
+        }
+        // 期間：指定期間に使われていた利用元
+        if (s.From is { } from) q = q.Where(x => x.LastSeenAt >= from);
+        if (s.To is { } to) q = q.Where(x => x.LogonTime <= to);
+        return q;
     }
 
     /// <param name="users">実行ユーザの表示名（AD）。指定するとキーワード・実行ユーザの条件で表示名も探す</param>

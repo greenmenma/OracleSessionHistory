@@ -3,7 +3,7 @@ import { api, type ConnectionCountNode, type PeriodCounts } from '../api'
 import { useAsync } from '../hooks'
 import { fmtDate, fmtDateTime } from '../format'
 import { navigate } from '../router'
-import { UserList } from '../components/UserName'
+import { UserList } from './UserName'
 
 type CountKey = keyof PeriodCounts
 
@@ -26,7 +26,8 @@ function leaves(nodes: ConnectionCountNode[]): ConnectionCountNode[] {
   return nodes.flatMap((n) => (n.children.length === 0 && n.kind !== 'machine' ? [n] : leaves(n.children)))
 }
 
-export default function CountsPage({ targetId }: { targetId?: number }) {
+/** 接続アプリ表（サマリーの下に表示する） */
+export default function ConnectionCountsSection({ targetId }: { targetId?: number }) {
   const [input, setInput] = useState('')
   const [q, setQ] = useState('')
   const { data, error, loading } = useAsync(() => api.connectionCounts(targetId, q), [targetId, q], 60000)
@@ -42,11 +43,7 @@ export default function CountsPage({ targetId }: { targetId?: number }) {
    */
   const renderNode = (n: ConnectionCountNode, guides: boolean[], last: boolean): React.ReactNode => (
     <Fragment key={`${guides.length}|${n.kind}|${n.label}`}>
-      <tr
-        className={`tree-${n.kind} depth-${Math.min(guides.length, 4)}`}
-        onClick={n.open ? () => navigate('/sessions', n.open!) : undefined}
-        title={n.open ? 'クリックでセッション履歴を表示' : undefined}
-      >
+      <tr className={`tree-${n.kind} depth-${Math.min(guides.length, 4)}`}>
         <td>
           <div className="tree-cell">
             {guides.length > 0 && (
@@ -67,6 +64,13 @@ export default function CountsPage({ targetId }: { targetId?: number }) {
               )}
             </div>
           </div>
+        </td>
+        <td className="nowrap">
+          {n.open && (
+            <button type="button" className="small" onClick={() => navigate('/sessions', n.open!)} title="この行のセッション履歴を表示">
+              履歴 →
+            </button>
+          )}
         </td>
         <td className="nowrap">
           <UserList accounts={n.owners} />
@@ -96,9 +100,9 @@ export default function CountsPage({ targetId }: { targetId?: number }) {
   )
 
   return (
-    <div className="page">
+    <div id="connection-counts" className="counts-section">
       <div className="page-head">
-        <h1>接続アプリ</h1>
+        <h2>接続アプリ</h2>
         <span className="muted">
           実行端末 → 実行ファイル → IIS のプール・sqlplus の実行元の順に、ログオン回数（取得できたセッション数）を表示します。DB Link 経由の接続は、DB サーバーの ORACLE.EXE の下に DB Link 接続元 → 接続元の端末 → 接続元のアプリで表示します。Oracle 内部プロセス（ジョブ等）は含みません
         </span>
@@ -134,10 +138,11 @@ export default function CountsPage({ targetId }: { targetId?: number }) {
           <span>{data ? `${nodes.length} 端末` : loading ? '読み込み中…' : ''}</span>
         </div>
         <div className="table-wrap">
-          <table className="counts tree hover">
+          <table className="counts tree">
             <thead>
               <tr>
                 <th>実行端末 / アプリ</th>
+                <th>セッション履歴</th>
                 <th>実行ユーザ</th>
                 <th className="num">接続中</th>
                 <th>最終確認</th>
@@ -155,7 +160,7 @@ export default function CountsPage({ targetId }: { targetId?: number }) {
               {nodes.map((n, i) => renderNode(n, [], i === nodes.length - 1))}
               {data && nodes.length === 0 && (
                 <tr>
-                  <td colSpan={13} className="empty">
+                  <td colSpan={14} className="empty">
                     データがありません
                   </td>
                 </tr>
@@ -164,7 +169,7 @@ export default function CountsPage({ targetId }: { targetId?: number }) {
             {nodes.length > 0 && (
               <tfoot>
                 <tr>
-                  <td colSpan={2}>合計</td>
+                  <td colSpan={3}>合計</td>
                   <td className="num">{nodes.reduce((a, n) => a + n.connected, 0).toLocaleString()}</td>
                   <td />
                   {totals.map((t, i) => (

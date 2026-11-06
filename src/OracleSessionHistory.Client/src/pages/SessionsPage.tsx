@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { api } from '../api'
+import { api, type DbLinkUsage, type SessionListItem } from '../api'
 import { useAsync } from '../hooks'
-import { fmtDateTime, fmtDuration, internalKinds, kindLabels } from '../format'
+import { fmtDateTime, fmtDuration, internalKinds, kindLabels, matchTypeLabels } from '../format'
 import SessionDetailPanel from '../components/SessionDetailPanel'
 import KindBadge from '../components/KindBadge'
 import Pager from '../components/Pager'
@@ -10,6 +10,8 @@ import UserName from '../components/UserName'
 import { replaceQuery } from '../router'
 
 interface Filters {
+  /** 表示するもの：空はセッションのみ、dblink は DB Link 利用元のみ、all は両方 */
+  source: string
   q: string
   state: string
   kind: string
@@ -46,6 +48,7 @@ function toQuery(f: Filters): Record<string, string | undefined> {
 
 function fromQuery(query: URLSearchParams): Filters {
   return {
+    source: query.get('source') ?? '',
     q: query.get('q') ?? '',
     state: query.get('state') ?? '',
     kind: query.get('kind') ?? '',
@@ -81,6 +84,14 @@ function treeLabels(f: Filters): string[] {
 
 function viaLabel(via: string): string {
   return via === 'direct' ? '直接の接続のみ（DB Link 経由を除く）' : `DB Link 経由（${via}）の接続のみ`
+}
+
+/** DB Link 利用元を表示する場合に効かない条件（監視対象のセッションだけにあるもの） */
+function sessionOnlyLabel(f: Filters): string | undefined {
+  if (f.source === 'dblink') return undefined
+  if (f.source === 'all' && (f.state || f.kind || f.includeInternal || treeKeys.some((k) => f[k])))
+    return '状態・種別・Oracle 内部プロセス・接続アプリの行の条件があるため、DB Link 利用元は表示していません'
+  return undefined
 }
 
 export default function SessionsPage({ targetId, query }: { targetId?: number; query: URLSearchParams }) {
@@ -149,6 +160,9 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
     apply(empty)
   }
 
+  const dbLinkOnly = form.source === 'dblink'
+  const excluded = sessionOnlyLabel(filters)
+
   return (
     <div className="page">
       <div className="page-head">
@@ -160,18 +174,31 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
       </div>
 
       <form className="card filters" onSubmit={search}>
+        <select
+          value={form.source}
+          onChange={(e) => {
+            // 表示するものはすぐに反映する
+            setForm({ ...form, source: e.target.value })
+            apply({ ...filters, source: e.target.value })
+          }}
+          title="DB Link 利用元：DB Link 接続元 DB 上で DB Link を使っていたセッション（設定 → DB Link 接続元 で登録）"
+        >
+          <option value="">対象：セッション</option>
+          <option value="dblink">対象：DB Link利用元</option>
+          <option value="all">対象：すべて</option>
+        </select>
         <input
           className="wide"
           placeholder="キーワード（端末・アプリ・プール名・実行ファイル・ユーザ・モジュール・SQL など）"
           value={form.q}
           onChange={set('q')}
         />
-        <select value={form.state} onChange={set('state')}>
+        <select value={form.state} onChange={set('state')} disabled={dbLinkOnly}>
           <option value="">状態：すべて</option>
           <option value="connected">接続中</option>
           <option value="disconnected">切断済み</option>
         </select>
-        <select value={form.kind} onChange={set('kind')}>
+        <select value={form.kind} onChange={set('kind')} disabled={dbLinkOnly}>
           <option value="">種別：すべて</option>
           {Object.entries(kindLabels)
             .filter(([k]) => !internalKinds.includes(k))
@@ -199,7 +226,7 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
         </label>
         <label className="check" title="ORACLE.EXE (J000) などのジョブ・パラレル実行・バックグラウンドプロセス。DB Link の可能性があるものは常に表示します">
           {/* チェックの切り替えはすぐに反映する */}
-          <input type="checkbox" checked={form.includeInternal} onChange={setBool('includeInternal', true)} />
+          <input type="checkbox" checked={form.includeInternal} onChange={setBool('includeInternal', true)} disabled={dbLinkOnly} />
           Oracle 内部プロセス・このシステムの接続も表示
         </label>
         <label className="check" title="実行端末・アプリを部分一致ではなく完全一致で検索します（接続アプリから開いた場合）">
@@ -237,6 +264,7 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
       </form>
 
       {error && <div className="alert error">{error}</div>}
+      {excluded && <div className="alert info">{excluded}</div>}
 
       <section className="card">
         <div className="table-head">
@@ -264,61 +292,26 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
               </tr>
             </thead>
             <tbody>
-              {data?.items.map((s) => (
-                <tr key={s.id} onClick={() => setSelected(s.id)} className={selected === s.id ? 'selected' : ''}>
-                  <td>
-                    {s.isConnected ? (
-                      <span className={`badge ${s.status === 'ACTIVE' ? 'green' : 'blue'}`}>
-                        {s.status === 'ACTIVE' ? '実行中' : '接続中'}
-                      </span>
-                    ) : (
-                      <span className="badge gray">切断</span>
-                    )}
-                  </td>
-                  {targetId === undefined && <td>{s.targetName}</td>}
-                  <td className="nowrap">{fmtDateTime(s.logonTime)}</td>
-                  <td className="nowrap">
-                    {fmtDateTime(s.disconnectedAt)}
-                    {s.disconnectUncertain && (
-                      <span className="badge amber" title="取得失敗や Batch 停止の後に検知したため、切断時刻は推定です">
-                        推定
-                      </span>
-                    )}
-                  </td>
-                  <td className="nowrap">{fmtDuration(s.logonTime, s.isConnected ? null : s.disconnectedAt)}</td>
-                  <td>{s.machine}</td>
-                  <td>
-                    <AppCell appName={s.appName} appDetail={s.appDetail} state={s.procInfoState} error={s.procInfoError} />
-                    {s.linkOriginApp && (
-                      <div className="link-origin" title="接続元 DB 上で DB Link を使っていたセッションのアプリ">
-                        DB Link 経由: <strong>{s.linkOriginApp}</strong>
-                        {(s.linkOriginMachine || s.linkOriginUser) && (
-                          <>
-                            （{s.linkOriginMachine}
-                            {s.linkOriginMachine && s.linkOriginUser && '・'}
-                            <UserName account={s.linkOriginUser} />）
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                  <td className="nowrap">
-                    <UserName account={s.procOwner ?? s.osUser} />
-                  </td>
-                  <td className="nowrap">
-                    {s.username}
-                    {s.schemaName && s.schemaName !== s.username && <div className="sub">スキーマ {s.schemaName}</div>}
-                  </td>
-                  <td className="ellipsis" title={s.module ?? ''}>
-                    {s.module}
-                  </td>
-                  <td>
-                    <KindBadge kind={s.processKind} />
-                    {s.jobName && <span className="badge purple">{s.jobName}</span>}
-                    {s.dbLinkOriginCount > 0 && <span className="badge green">接続元特定</span>}
-                  </td>
-                </tr>
-              ))}
+              {data?.items.map((r) =>
+                r.type === 'session' ? (
+                  <SessionRowView
+                    key={`s${r.session.id}`}
+                    s={r.session}
+                    showTarget={targetId === undefined}
+                    selected={selected === r.session.id}
+                    onSelect={setSelected}
+                  />
+                ) : (
+                  <UsageRowView
+                    key={`u${r.usage.id}`}
+                    u={r.usage}
+                    targetName={r.targetName}
+                    showTarget={targetId === undefined}
+                    selected={selected !== undefined && selected === r.usage.matchedSessionId}
+                    onSelect={setSelected}
+                  />
+                ),
+              )}
               {data && data.items.length === 0 && (
                 <tr>
                   <td colSpan={11} className="empty">
@@ -333,5 +326,136 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
 
       {selected !== undefined && <SessionDetailPanel id={selected} onClose={() => setSelected(undefined)} />}
     </div>
+  )
+}
+
+function SessionRowView({
+  s,
+  showTarget,
+  selected,
+  onSelect,
+}: {
+  s: SessionListItem
+  showTarget: boolean
+  selected: boolean
+  onSelect: (id: number) => void
+}) {
+  return (
+    <tr onClick={() => onSelect(s.id)} className={selected ? 'selected' : ''}>
+      <td>
+        {s.isConnected ? (
+          <span className={`badge ${s.status === 'ACTIVE' ? 'green' : 'blue'}`}>{s.status === 'ACTIVE' ? '実行中' : '接続中'}</span>
+        ) : (
+          <span className="badge gray">切断</span>
+        )}
+      </td>
+      {showTarget && <td>{s.targetName}</td>}
+      <td className="nowrap">{fmtDateTime(s.logonTime)}</td>
+      <td className="nowrap">
+        {fmtDateTime(s.disconnectedAt)}
+        {s.disconnectUncertain && (
+          <span className="badge amber" title="取得失敗や Batch 停止の後に検知したため、切断時刻は推定です">
+            推定
+          </span>
+        )}
+      </td>
+      <td className="nowrap">{fmtDuration(s.logonTime, s.isConnected ? null : s.disconnectedAt)}</td>
+      <td>{s.machine}</td>
+      <td>
+        <AppCell appName={s.appName} appDetail={s.appDetail} state={s.procInfoState} error={s.procInfoError} />
+        {s.linkOriginApp && (
+          <div className="link-origin" title="接続元 DB 上で DB Link を使っていたセッションのアプリ">
+            DB Link 経由: <strong>{s.linkOriginApp}</strong>
+            {(s.linkOriginMachine || s.linkOriginUser) && (
+              <>
+                （{s.linkOriginMachine}
+                {s.linkOriginMachine && s.linkOriginUser && '・'}
+                <UserName account={s.linkOriginUser} />）
+              </>
+            )}
+          </div>
+        )}
+      </td>
+      <td className="nowrap">
+        <UserName account={s.procOwner ?? s.osUser} />
+      </td>
+      <td className="nowrap">
+        {s.username}
+        {s.schemaName && s.schemaName !== s.username && <div className="sub">スキーマ {s.schemaName}</div>}
+      </td>
+      <td className="ellipsis" title={s.module ?? ''}>
+        {s.module}
+      </td>
+      <td>
+        <KindBadge kind={s.processKind} />
+        {s.jobName && <span className="badge purple">{s.jobName}</span>}
+        {s.dbLinkOriginCount > 0 && <span className="badge green">接続元特定</span>}
+      </td>
+    </tr>
+  )
+}
+
+/** DB Link 利用元の行（接続元 DB 上のセッション）。監視対象側のセッションを特定できていれば、クリックでその詳細を開く */
+function UsageRowView({
+  u,
+  targetName,
+  showTarget,
+  selected,
+  onSelect,
+}: {
+  u: DbLinkUsage
+  targetName: string
+  showTarget: boolean
+  selected: boolean
+  onSelect: (id: number) => void
+}) {
+  const matched = u.matchedSessionId
+  return (
+    <tr
+      className={`usage-row ${selected ? 'selected' : ''} ${matched ? '' : 'no-detail'}`}
+      onClick={matched ? () => onSelect(matched) : undefined}
+      title={matched ? `クリックで監視対象側のセッション #${matched} を表示` : '監視対象側のセッションは特定できていません'}
+    >
+      <td>
+        <span className="badge purple" title="DB Link 接続元 DB 上で DB Link を使っていたセッション">
+          DB Link利用元
+        </span>
+      </td>
+      {showTarget && <td>{targetName}</td>}
+      <td className="nowrap">{fmtDateTime(u.logonTime)}</td>
+      <td className="nowrap muted" title="接続元 DB 上で最後に DB Link の利用を確認した時刻">
+        最終確認 {fmtDateTime(u.lastSeenAt)}
+      </td>
+      <td className="nowrap">{fmtDuration(u.logonTime, u.lastSeenAt)}</td>
+      <td>{u.machine}</td>
+      <td>
+        <AppCell appName={u.appName} appDetail={u.appDetail} state={u.procInfoState} error={u.procInfoError} />
+        {u.procCommandLine && (
+          <div className="app-detail mono" title={u.procCommandLine}>
+            {u.procCommandLine}
+          </div>
+        )}
+      </td>
+      <td className="nowrap">
+        <UserName account={u.procOwner ?? u.osUser} />
+      </td>
+      <td className="nowrap">
+        {u.username}
+        {u.schemaName && u.schemaName !== u.username && <div className="sub">スキーマ {u.schemaName}</div>}
+      </td>
+      <td className="ellipsis" title={[u.module, u.sqlText].filter(Boolean).join('\n')}>
+        {u.module}
+        {u.sqlText && <div className="sub mono ellipsis">{u.sqlText}</div>}
+      </td>
+      <td>
+        <span className="badge gray" title="接続元 DB（設定の DB Link 接続元）">
+          {u.linkSourceName}
+        </span>
+        <span className="badge blue" title="DB Link">
+          {u.dbLinkName}
+        </span>
+        <span className={`badge ${u.matchType === 'PROCESS' ? 'green' : 'amber'}`}>{matchTypeLabels[u.matchType] ?? u.matchType}</span>
+      </td>
+    </tr>
   )
 }

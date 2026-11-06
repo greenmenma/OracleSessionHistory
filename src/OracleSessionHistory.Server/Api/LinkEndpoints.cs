@@ -97,31 +97,6 @@ public static class LinkEndpoints
                 return Results.Ok(new { success = false, links = Array.Empty<DbLinkInfo>(), message = ex.Message });
             }
         });
-
-        // DB Link の利用状況（接続元のセッション）
-        g.MapGet("/db-link-usages", async (int? targetId, int? linkSourceId, string? q, int? page, int? pageSize, AppDbContext db) =>
-        {
-            var query = db.DbLinkUsages.AsNoTracking();
-            if (targetId is { } tid) query = query.Where(u => u.TargetId == tid);
-            if (linkSourceId is { } lid) query = query.Where(u => u.LinkSourceId == lid);
-            if (!string.IsNullOrWhiteSpace(q))
-            {
-                var p = QueryHelpers.Contains(q.Trim());
-                query = query.Where(u => EF.Functions.Like(u.Machine, p, "\\") || EF.Functions.Like(u.Program, p, "\\")
-                                         || EF.Functions.Like(u.Username, p, "\\") || EF.Functions.Like(u.OsUser, p, "\\")
-                                         || EF.Functions.Like(u.DbLinkName, p, "\\") || EF.Functions.Like(u.SqlText, p, "\\")
-                                         || EF.Functions.Like(u.AppName, p, "\\") || EF.Functions.Like(u.ProcPath, p, "\\")
-                                         || EF.Functions.Like(u.ProcOwner, p, "\\"));
-            }
-            var ps = Math.Clamp(pageSize ?? 50, 1, 500);
-            var pg = Math.Max(1, page ?? 1);
-            var total = await query.CountAsync();
-            var items = await query.OrderByDescending(u => u.LastSeenAt).ThenByDescending(u => u.Id)
-                .Skip((pg - 1) * ps).Take(ps)
-                .Select(u => DbLinkUsageDto.From(u, u.LinkSource!.Name))
-                .ToListAsync();
-            return new PagedResult<DbLinkUsageDto>(items, total, pg, ps);
-        });
     }
 
     private static void Apply(LinkSourceInput input, LinkSource l, DateTime now)
