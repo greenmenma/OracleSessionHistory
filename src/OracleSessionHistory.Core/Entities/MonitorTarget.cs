@@ -43,6 +43,15 @@ public class MonitorTarget
     public int ConsecutiveFailures { get; set; }
     public int? LastSessionCount { get; set; }
 
+    // ---- 監査証跡（DBA_AUDIT_SESSION）のログオン件数（Batch が更新する。UpdatedAt は変えない） ----
+    /// <summary>監査の件数を使う期間の開始日（この日を含む）。未取得は null</summary>
+    public DateTime? AuditFrom { get; set; }
+    /// <summary>監査の件数を使う期間の終了日（この日を含まない）。このシステムの履歴が丸 1 日そろう最初の日</summary>
+    public DateTime? AuditTo { get; set; }
+    public DateTime? AuditFetchedAt { get; set; }
+    /// <summary>直近の取得に失敗した理由（成功したら null）</summary>
+    public string? AuditError { get; set; }
+
     public List<LinkSource> LinkSources { get; set; } = [];
 }
 

@@ -12,6 +12,9 @@ namespace OracleSessionHistory.Core.Services;
 /// <summary>1 回分のポーリング結果</summary>
 public sealed record PollOutcome(bool Success, int Observed, int Added, int Disconnected, string? Error);
 
+/// <summary>監査証跡のログオン件数の取得結果。Needed=false は、履歴が 2 ヶ月分たまっていて取得不要だった</summary>
+public sealed record AuditPollOutcome(bool Needed, bool Success, int Rows, string? Error);
+
 /// <summary>
 /// 収集処理（Batch から呼ばれる）。取得 → 追跡 → 保存 を 1 回分行う。
 /// </summary>
@@ -241,6 +244,69 @@ public sealed class CollectionService(
         }
         return reassigned;
     }
+
+    /// <summary>
+    /// 監査証跡（DBA_AUDIT_SESSION）から、このシステムの履歴がまだ無い期間の日・端末ごとのログオン件数を取得して保存する。
+    /// 期間は接続アプリ表の最も古い列（2 ヶ月前の同日）から、履歴が丸 1 日そろう最初の日（最初に観測した日の翌日）の前日まで。
+    /// 履歴が 2 ヶ月分たまったら取得しない。失敗してもセッションの収集には影響しない（理由を監視対象に残す）。
+    /// </summary>
+    public async Task<AuditPollOutcome> PollAuditLogonsAsync(int targetId, CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var target = await db.Targets.AsNoTracking().SingleOrDefaultAsync(t => t.Id == targetId, ct);
+        if (target is null) return new AuditPollOutcome(false, true, 0, null);
+
+        var from = AuditWindowStart(DateTime.Today);
+        var firstSeen = await db.Sessions.Where(s => s.TargetId == targetId).MinAsync(s => (DateTime?)s.FirstSeenAt, ct);
+        var to = (firstSeen ?? DateTime.Now).Date.AddDays(1);
+        if (to <= from) return new AuditPollOutcome(false, true, 0, null);
+
+        IReadOnlyList<AuditLogonDay> days;
+        try
+        {
+            days = await sources.Get(target.Provider).CaptureAuditLogonsAsync(target, from, to, ct);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            var error = Truncate(ex.Message, 1000);
+            // 同じ理由で失敗し続ける場合（権限なし等）は、最初の 1 回だけ警告する
+            if (error != target.AuditError)
+                logger.LogWarning(ex, "[{Target}] 監査証跡（DBA_AUDIT_SESSION）のログオン件数を取得できませんでした（接続アプリ表の補完に使います）", target.Name);
+            await db.Targets.Where(t => t.Id == targetId).ExecuteUpdateAsync(x => x
+                .SetProperty(t => t.AuditError, error)
+                .SetProperty(t => t.AuditFetchedAt, DateTime.Now), ct);
+            return new AuditPollOutcome(true, false, 0, error);
+        }
+
+        // 端末名の大文字小文字の違いは同じ端末として合計する（SQL Server の照合順序では同じ値になるため）
+        var rows = days
+            .GroupBy(d => (Day: d.Day.Date, Key: Truncate(d.Machine?.Trim() ?? "", 256).ToUpperInvariant()))
+            .Select(g => new AuditLogonCount
+            {
+                TargetId = targetId, Day = g.Key.Day, Machine = Truncate(g.First().Machine?.Trim() ?? "", 256), Count = g.Sum(d => d.Count),
+            })
+            .ToList();
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.AuditLogonCounts.Where(a => a.TargetId == targetId).ExecuteDeleteAsync(ct);
+        db.AuditLogonCounts.AddRange(rows);
+        await db.SaveChangesAsync(ct);
+        // UpdatedAt は変えない（Batch の再起動の判断に使うため）
+        await db.Targets.Where(t => t.Id == targetId).ExecuteUpdateAsync(x => x
+            .SetProperty(t => t.AuditFrom, from)
+            .SetProperty(t => t.AuditTo, to)
+            .SetProperty(t => t.AuditFetchedAt, DateTime.Now)
+            .SetProperty(t => t.AuditError, (string?)null), ct);
+        await tx.CommitAsync(ct);
+        if (target.AuditError is not null)
+            logger.LogInformation("[{Target}] 監査証跡のログオン件数を取得できるようになりました", target.Name);
+        return new AuditPollOutcome(true, true, rows.Count, null);
+    }
+
+    /// <summary>接続アプリ表の最も古い列（1ヶ月〜2ヶ月）の開始日</summary>
+    public static DateTime AuditWindowStart(DateTime today) => today.AddMonths(-2);
+
+    private static string Truncate(string s, int max) => s.Length > max ? s[..max] : s;
 
     /// <summary>保持期間を過ぎた履歴を削除する</summary>
     public async Task<int> CleanupAsync(int retentionDays, CancellationToken ct)

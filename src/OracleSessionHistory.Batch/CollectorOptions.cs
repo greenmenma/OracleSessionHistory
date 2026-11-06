@@ -12,6 +12,12 @@ public sealed class CollectorOptions
     /// <summary>接続元サーバーのプロセス情報を取得する間隔（秒）</summary>
     public int ProcessInfoSeconds { get; set; } = 10;
 
+    /// <summary>
+    /// 監査証跡（DBA_AUDIT_SESSION）のログオン件数を取り直す間隔（分）。履歴が 2 ヶ月分たまるまで、接続アプリ表の端末の行を補う。
+    /// 0 以下で取得しない
+    /// </summary>
+    public int AuditLogonMinutes { get; set; } = 60;
+
     /// <summary>監視対象が 1 件も無い場合にデモ用の監視対象を登録する</summary>
     public bool SeedDemoTarget { get; set; }
 }

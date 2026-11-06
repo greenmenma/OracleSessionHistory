@@ -17,6 +17,34 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
 
+            modelBuilder.Entity("OracleSessionHistory.Core.Entities.AuditLogonCount", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Count")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("Day")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Machine")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("TargetId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TargetId", "Day", "Machine")
+                        .IsUnique();
+
+                    b.ToTable("AuditLogonCounts");
+                });
+
             modelBuilder.Entity("OracleSessionHistory.Core.Entities.DbLinkUsage", b =>
                 {
                     b.Property<long>("Id")
@@ -215,6 +243,18 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("AuditError")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("AuditFetchedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("AuditFrom")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("AuditTo")
+                        .HasColumnType("TEXT");
 
                     b.Property<bool>("CollectSqlText")
                         .HasColumnType("INTEGER");
@@ -517,6 +557,17 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
                         .IsUnique();
 
                     b.ToTable("Sessions");
+                });
+
+            modelBuilder.Entity("OracleSessionHistory.Core.Entities.AuditLogonCount", b =>
+                {
+                    b.HasOne("OracleSessionHistory.Core.Entities.MonitorTarget", "Target")
+                        .WithMany()
+                        .HasForeignKey("TargetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Target");
                 });
 
             modelBuilder.Entity("OracleSessionHistory.Core.Entities.DbLinkUsage", b =>

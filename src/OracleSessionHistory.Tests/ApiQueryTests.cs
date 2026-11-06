@@ -149,12 +149,18 @@ public sealed class ApiQueryTests : IDisposable
         Add(ProcessKinds.DbLinkSuspect, "KIKAN-DB01", "ORACLE.EXE", null, Today.AddHours(10), connected: true, origin: ("KIKAN-AP02", "在庫照会.exe"));
         Add(ProcessKinds.DbLinkSuspect, "KIKAN-DB01", "ORACLE.EXE", null, Today.AddHours(11));
 
-        var rows = await ReportEndpoints.QueryConnectionCountsAsync(_db, null, null, Today, default);
+        var (groups, _) = await ReportEndpoints.QueryConnectionCountGroupsAsync(_db, null, null, Today, default);
 
-        var origin = rows.Single(r => r.Machine == "KIKAN-AP02");
-        Assert.Equal(("在庫照会.exe", 2, 1, 1), (origin.AppName, origin.Today, origin.ViaDbLink, origin.Connected));
-        var unresolved = rows.Single(r => r.Machine == "KIKAN-DB01");
-        Assert.Equal(("ORACLE.EXE", 1, 0), (unresolved.AppName, unresolved.Today, unresolved.ViaDbLink));
+        // 直接の接続：端末 → アプリ
+        var ap = groups.Single(g => g is { Kind: ConnectionCountKinds.Machine, Machine: "KIKAN-AP02" });
+        Assert.Equal(("在庫照会.exe", 1, 0), (ap.Children.Single().AppName, ap.Children.Single().Today, ap.Children.Single().Connected));
+        // DB Link 経由：経由した DB サーバー → 接続元の端末・アプリ
+        var link = groups.Single(g => g.Kind == ConnectionCountKinds.DbLink);
+        Assert.Equal(("KIKAN-DB01", 1, 1), (link.Machine, link.Today, link.Connected));
+        Assert.Equal(("KIKAN-AP02", "在庫照会.exe", "KIKAN-DB01"), (link.Children.Single().Machine, link.Children.Single().AppName, link.Children.Single().LinkVia));
+        // 接続元を特定できていない ORACLE.EXE は DB サーバーの端末の下に残る
+        var db = groups.Single(g => g is { Kind: ConnectionCountKinds.Machine, Machine: "KIKAN-DB01" });
+        Assert.Equal(("ORACLE.EXE", 1), (db.Children.Single().AppName, db.Today));
     }
 
     [Fact]
@@ -182,9 +188,14 @@ public sealed class ApiQueryTests : IDisposable
         Add(ProcessKinds.Client, "WEB02", "IIS: Foo", null, Today.AddHours(10));
         Add(ProcessKinds.JobSlave, "DB01", "ORACLE.EXE (J000)", null, Today.AddHours(10));
 
-        var rows = await ReportEndpoints.QueryConnectionCountsAsync(_db, null, null, Today, default);
+        var (groups, _) = await ReportEndpoints.QueryConnectionCountGroupsAsync(_db, null, null, Today, default);
+        var rows = groups.SelectMany(g => g.Children).ToList();
 
         Assert.Equal(3, rows.Count);
+        var web01 = groups.Single(g => g.Machine == "WEB01");
+        Assert.Equal((2, 3, 1), (web01.Today, web01.Month1, web01.Connected)); // 端末の行は子の合計
+        Assert.Equal("IIS: Foo", web01.Children[0].AppName); // 多い順
+        Assert.Empty(web01.AuditPeriods);
         var foo = rows.Single(r => r.Machine == "WEB01" && r.AppName == "IIS: Foo");
         Assert.Equal(1, foo.Today);
         Assert.Equal(1, foo.D1);
@@ -193,6 +204,67 @@ public sealed class ApiQueryTests : IDisposable
         Assert.Equal("Default Web Site/foo", foo.AppDetail);
         Assert.Equal(@"IIS APPPOOL\Foo", foo.Owner);
         Assert.DoesNotContain(rows, r => r.Machine == "DB01");
+    }
+
+    private void SetAudit(DateTime from, DateTime to, params (DateTime Day, string Machine, int Count)[] rows)
+    {
+        var t = _db.Targets.Single(x => x.Id == _targetId);
+        (t.AuditFrom, t.AuditTo, t.AuditFetchedAt) = (from, to, Today);
+        foreach (var r in rows) _db.AuditLogonCounts.Add(new AuditLogonCount { TargetId = _targetId, Day = r.Day, Machine = r.Machine, Count = r.Count });
+        _db.SaveChanges();
+    }
+
+    [Fact]
+    public async Task 履歴が無い期間は端末の行を監査証跡の件数で補う()
+    {
+        // 履歴は 3 日前の昼から（3 日前は途中からのため監査の件数を使う。2 日前以降は履歴）
+        Add(ProcessKinds.Client, "WEB01", "IIS: Foo", logon: Today.AddDays(-3).AddHours(13));
+        Add(ProcessKinds.Client, "WEB01", "IIS: Foo", logon: Today.AddDays(-2).AddHours(9));
+        Add(ProcessKinds.Client, "WEB01", "IIS: Foo", logon: Today.AddHours(9));
+        SetAudit(Today.AddMonths(-2), Today.AddDays(-2),
+            (Today.AddDays(-3), "web01", 10), (Today.AddDays(-5), "WEB01", 4), (Today.AddDays(-40), "WEB01", 7),
+            (Today.AddDays(-4), "PC-OLD", 2), (Today.AddMonths(-3), "WEB01", 99)); // 期間外は数えない
+
+        var (groups, audit) = await ReportEndpoints.QueryConnectionCountGroupsAsync(_db, null, null, Today, default);
+
+        var web01 = groups.Single(g => g.Machine == "WEB01");
+        Assert.Equal((1, 1, 10, 0, 4), (web01.Today, web01.D2, web01.D3, web01.D4, web01.D5));
+        Assert.Equal((1 + 1 + 10 + 4, 7), (web01.Month1, web01.Month2));
+        Assert.Equal(["d3", "d4", "d5", "d6", "month1", "month2"], web01.AuditPeriods);
+        // 子の行（アプリ）は履歴の件数のみ
+        Assert.Equal(3, web01.Children.Single().Month1);
+        // 履歴に無い端末も監査の件数だけで親の行に出す
+        var old = groups.Single(g => g.Machine == "PC-OLD");
+        Assert.Equal((2, 0), (old.D4, old.Children.Count));
+        Assert.Equal(Today.AddDays(-3), audit.Single().LastDay);
+    }
+
+    [Fact]
+    public async Task 絞り込み時は端末名が一致する場合だけ監査証跡で補う()
+    {
+        Add(ProcessKinds.Client, "WEB01", "IIS: Foo", logon: Today.AddHours(9));
+        SetAudit(Today.AddMonths(-2), Today.AddDays(-2), (Today.AddDays(-3), "WEB01", 10));
+
+        var (byApp, _) = await ReportEndpoints.QueryConnectionCountGroupsAsync(_db, null, "Foo", Today, default);
+        var (byMachine, _) = await ReportEndpoints.QueryConnectionCountGroupsAsync(_db, null, "web0", Today, default);
+
+        Assert.Equal(0, byApp.Single().D3);
+        Assert.Equal(10, byMachine.Single().D3);
+    }
+
+    [Fact]
+    public void 経由の条件で直接の接続とDBLink経由の接続を分けて探す()
+    {
+        Add(ProcessKinds.Client, "KIKAN-AP02", "在庫照会.exe");
+        Add(ProcessKinds.DbLinkSuspect, "KIKAN-DB01", "ORACLE.EXE", origin: ("KIKAN-AP02", "在庫照会.exe"));
+        Add(ProcessKinds.DbLinkSuspect, "KIKAN-DB02", "ORACLE.EXE", origin: ("KIKAN-AP02", "在庫照会.exe"));
+
+        List<TrackedSession> Find(string? machine, string? app, string via) => SessionEndpoints.Filter(_db.Sessions,
+            new SessionSearch(null, null, null, machine, null, null, null, null, null, null, App: app, Exact: true, Via: via)).ToList();
+
+        Assert.Null(Find("KIKAN-AP02", "在庫照会.exe", SessionEndpoints.DirectVia).Single().LinkOriginApp);
+        Assert.Equal("KIKAN-DB01", Find("KIKAN-AP02", "在庫照会.exe", "KIKAN-DB01").Single().Machine);
+        Assert.Equal("KIKAN-DB02", Find(null, null, "KIKAN-DB02").Single().Machine);
     }
 }
 
@@ -229,6 +301,11 @@ public class ApiQuerySqlServerTests
             AppDbProviders.SqlServer, "Server=localhost;Database=x;Integrated Security=true;TrustServerCertificate=true").Options);
         var sql = ReportEndpoints.ConnectionCountsQuery(db, null, null, new DateTime(2026, 11, 5)).ToQueryString();
         Assert.Contains("GROUP BY", sql);
+        var days = ReportEndpoints.MachineDaysQuery(db, null, "WEB", new DateTime(2026, 11, 5)).ToQueryString();
+        Assert.Contains("GROUP BY", days);
+        var via = SessionEndpoints.Filter(db.Sessions,
+            new SessionSearch(null, null, null, "AP01", null, null, null, null, null, null, App: "x", Exact: true, Via: "DB01")).ToQueryString();
+        Assert.Contains("[s].[LinkOriginApp] IS NOT NULL", via);
         await Task.CompletedTask;
     }
 

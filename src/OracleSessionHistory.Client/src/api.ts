@@ -212,16 +212,8 @@ export interface SessionDetail {
   hasLinkSource: boolean
 }
 
-export interface ConnectionCountRow {
-  /** DB Link 経由（ORACLE.EXE）のログオン数と、経由した DB サーバー */
-  viaDbLink: number
-  linkVia: string | null
-  machine: string | null
-  appName: string
-  appDetail: string | null
-  owner: string | null
-  connected: number
-  lastSeenAt: string
+/** 接続アプリ表の期間別のログオン数 */
+export interface PeriodCounts {
   today: number
   d1: number
   d2: number
@@ -233,9 +225,43 @@ export interface ConnectionCountRow {
   month2: number
 }
 
+/** 接続アプリ表の子の行（端末 × アプリ） */
+export interface ConnectionCountRow extends PeriodCounts {
+  machine: string | null
+  appName: string
+  appDetail: string | null
+  owner: string | null
+  connected: number
+  lastSeenAt: string
+  /** DB Link 経由の行の場合、経由した DB サーバー（直接の接続は null） */
+  linkVia: string | null
+}
+
+/** 接続アプリ表の親の行（端末、または DB Link 経由の DB サーバー） */
+export interface ConnectionCountGroup extends PeriodCounts {
+  kind: 'machine' | 'dblink'
+  machine: string | null
+  connected: number
+  lastSeenAt: string | null
+  /** 監査証跡（DBA_AUDIT_SESSION）の件数を使った列 */
+  auditPeriods: (keyof PeriodCounts)[]
+  children: ConnectionCountRow[]
+}
+
+/** 監視対象ごとの監査証跡の取得状況 */
+export interface AuditCoverage {
+  targetName: string
+  /** 監査の件数で補う期間（両端を含む） */
+  from: string | null
+  lastDay: string | null
+  fetchedAt: string | null
+  error: string | null
+}
+
 export interface ConnectionCounts {
   periods: Record<string, string>
-  rows: ConnectionCountRow[]
+  groups: ConnectionCountGroup[]
+  audit: AuditCoverage[]
 }
 
 export interface LinkSource {
