@@ -73,8 +73,8 @@ public sealed class ProcessInfoService(
             .Select(u => new { Row = u, u.LinkSource!.Provider })
             .ToListAsync(ct);
 
-        var rows = sessions.Select(r => (Row: (IProcessInfoRecord)r.Row, r.Provider, Direct: true))
-            .Concat(usages.Select(r => (Row: (IProcessInfoRecord)r.Row, r.Provider, Direct: false)))
+        var rows = sessions.Select(r => (Row: (IProcessInfoRecord)r.Row, r.Provider))
+            .Concat(usages.Select(r => (Row: (IProcessInfoRecord)r.Row, r.Provider)))
             .ToList();
         if (rows.Count == 0) return new ProcessInfoOutcome(0, 0, 0);
 
@@ -84,10 +84,16 @@ public sealed class ProcessInfoService(
         {
             var host = ClientProcessRules.HostOf(r.Row.Machine);
             var pid = ClientProcessRules.ProcessIdOf(r.Row.ClientProcess);
-            // DB Link 利用元がジョブ・さらに別の DB Link 等の場合、端末は DB サーバー自身のため問い合わせない
-            string? reason = !r.Direct && ProgramClassifier.Classify(r.Row.Program, "USER", r.Row.Module) != ProcessKinds.Client
-                    ? "接続元が Oracle のプロセス（ジョブ・DB Link 等）のため取得しません"
-                : host is null ? "端末名（MACHINE）がありません"
+            // 取得対象のプログラム（w3wp.exe・sqlplus.exe）以外は問い合わせず、理由も残さない（画面に表示しない）。
+            // DB Link 利用元がジョブ・さらに別の DB Link 等（ORACLE.EXE）の場合もここで除かれる
+            if (!ClientProcessRules.IsInspectedProgram(r.Row.Program))
+            {
+                skipped.Add((r.Row, r.Row.ProcInfoState, r.Row.ProcInfoError, r.Row.ProcInfoAt));
+                SetState(r.Row, ProcInfoStates.NotApplicable, null, now);
+                r.Row.ProcInfoAt = null;
+                continue;
+            }
+            string? reason = host is null ? "端末名（MACHINE）がありません"
                 : pid is null ? $"PROCESS（{r.Row.ClientProcess}）からプロセス ID を取得できません"
                 : ClientProcessRules.IsDriverDefaultProcess(r.Row.ClientProcess, r.Row.Program, r.Row.ClientDriver)
                     ? "JDBC Thin ドライバの既定値（PROCESS=1234）のため、プロセスを特定できません"
@@ -222,20 +228,26 @@ public sealed class ProcessInfoService(
         }
     }
 
+    // 取得対象のプログラム（ClientProcessRules.InspectedPrograms と同じ。DB で絞り込むための小文字の値）
+    private const string W3wp = "w3wp.exe";
+    private const string SqlPlus = "sqlplus.exe";
+
     /// <summary>
     /// 設定（対象外端末）を変更したとき、対象外にしていた接続中のクライアントセッションと
-    /// 観測中の DB Link 利用元を未取得に戻して調べ直す。
+    /// 観測中の DB Link 利用元を未取得に戻して調べ直す（取得対象のプログラムのみ）。
     /// </summary>
     public static async Task<int> RequeueSkippedAsync(AppDbContext db, CancellationToken ct)
     {
         var n = await db.Sessions
-            .Where(s => s.IsConnected && s.ProcessKind == ProcessKinds.Client && s.ProcInfoState == ProcInfoStates.NotApplicable)
+            .Where(s => s.IsConnected && s.ProcessKind == ProcessKinds.Client && s.ProcInfoState == ProcInfoStates.NotApplicable
+                        && (s.Program!.Trim().ToLower() == W3wp || s.Program!.Trim().ToLower() == SqlPlus))
             .ExecuteUpdateAsync(x => x
                 .SetProperty(s => s.ProcInfoState, ProcInfoStates.Pending)
                 .SetProperty(s => s.ProcInfoError, (string?)null), ct);
         var since = DateTime.Now - LinkUsageWindow;
         n += await db.DbLinkUsages
-            .Where(u => u.LastSeenAt >= since && u.ProcInfoState == ProcInfoStates.NotApplicable)
+            .Where(u => u.LastSeenAt >= since && u.ProcInfoState == ProcInfoStates.NotApplicable
+                        && (u.Program!.Trim().ToLower() == W3wp || u.Program!.Trim().ToLower() == SqlPlus))
             .ExecuteUpdateAsync(x => x
                 .SetProperty(u => u.ProcInfoState, ProcInfoStates.Pending)
                 .SetProperty(u => u.ProcInfoError, (string?)null), ct);

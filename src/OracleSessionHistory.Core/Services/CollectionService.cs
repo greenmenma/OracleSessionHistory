@@ -210,8 +210,9 @@ public sealed class CollectionService(
                     Serial = u.Serial,
                     LogonTime = u.LogonTime,
                     FirstSeenAt = now,
-                    // 接続元端末のプロセス情報は ProcessInfoService が取得する（それまでは PROGRAM 等から仮のアプリ名を付ける）
-                    ProcInfoState = ProcInfoStates.Pending,
+                    // 接続元端末のプロセス情報は ProcessInfoService が取得する（それまでは PROGRAM 等から仮のアプリ名を付ける）。
+                    // 取得対象のプログラム（w3wp.exe・sqlplus.exe）以外は取得しない
+                    ProcInfoState = ClientProcessRules.IsInspectedProgram(u.Program) ? ProcInfoStates.Pending : ProcInfoStates.NotApplicable,
                 };
                 (row.AppName, row.AppDetail) = AppIdentifier.Identify(null, u.Program, u.Module, u.OsUser);
                 db.DbLinkUsages.Add(row);

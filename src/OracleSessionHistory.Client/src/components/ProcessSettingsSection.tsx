@@ -71,8 +71,9 @@ export default function ProcessSettingsSection() {
         {data?.updatedAt && <span className="muted">最終更新 {fmtDateTime(data.updatedAt)}</span>}
       </div>
       <p className="muted">
-        接続元サーバー（MACHINE）に WMI（DCOM）で問い合わせ、PROCESS の PID から実行ファイル・コマンドライン・
-        実行ユーザ・IIS のアプリケーションプール名を取得します。取得できない場合は PROGRAM でアプリを表示します。
+        PROGRAM が w3wp.exe・sqlplus.exe のセッションについて、接続元サーバー（MACHINE）に WMI（DCOM）で問い合わせ、
+        PROCESS の PID から実行ファイル・コマンドライン・実行ユーザ・IIS のアプリケーションプール名・実行元を取得します。
+        それ以外のプログラムと、取得できない場合は PROGRAM でアプリを表示します。
       </p>
       <form className="stack-form" onSubmit={save}>
         <label className="check">

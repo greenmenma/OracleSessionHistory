@@ -10,6 +10,17 @@ public static partial class ClientProcessRules
     /// <summary>プロセス開始がログオンよりこれ以上後なら、PID が再利用された別プロセスとみなす（クライアントと DB の時計差を許容）</summary>
     public static readonly TimeSpan StartTolerance = TimeSpan.FromMinutes(5);
 
+    /// <summary>
+    /// プロセス情報を取得するプログラム（gv$session.program）。IIS（プールの区別）と sqlplus.exe（実行元の区別）だけを調べる。
+    /// それ以外は PROGRAM でアプリを表示し、接続元サーバーに問い合わせない。
+    /// </summary>
+    public static readonly IReadOnlySet<string> InspectedPrograms =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "w3wp.exe", "sqlplus.exe" };
+
+    /// <summary>プロセス情報を取得する対象のプログラムか</summary>
+    public static bool IsInspectedProgram(string? program) =>
+        !string.IsNullOrWhiteSpace(program) && InspectedPrograms.Contains(program.Trim());
+
     [GeneratedRegex(@"(?:^|\s)-ap\s+(?:""([^""]*)""|(\S+))", RegexOptions.IgnoreCase)]
     private static partial Regex AppPoolOption();
 

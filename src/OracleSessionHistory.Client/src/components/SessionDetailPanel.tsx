@@ -39,12 +39,15 @@ export default function SessionDetailPanel({ id, onClose }: { id: number; onClos
             <dl className="props">
               <Prop label="アプリ" value={s.appName} />
               <Prop label="補足" value={s.appDetail} />
-              <Prop
-                label="プロセス情報"
-                value={`${procInfoLabels[s.procInfoState] ?? s.procInfoState}${s.procInfoError ? `：${s.procInfoError}` : ''}${
-                  s.procInfoAt ? `（${fmtDateTime(s.procInfoAt)}）` : ''
-                }`}
-              />
+              {/* 取得対象外のプログラム（w3wp.exe・sqlplus.exe 以外）など、理由の無い「対象外」は表示しない */}
+              {(s.procInfoState !== 'NotApplicable' || s.procInfoError) && (
+                <Prop
+                  label="プロセス情報"
+                  value={`${procInfoLabels[s.procInfoState] ?? s.procInfoState}${s.procInfoError ? `：${s.procInfoError}` : ''}${
+                    s.procInfoAt ? `（${fmtDateTime(s.procInfoAt)}）` : ''
+                  }`}
+                />
+              )}
               {s.procInfoState === 'Resolved' && (
                 <>
                   <Prop label="IIS アプリケーションプール" value={s.iisAppPool} />

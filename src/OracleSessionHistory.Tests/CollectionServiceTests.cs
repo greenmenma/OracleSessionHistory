@@ -232,7 +232,8 @@ public sealed class CollectionServiceTests : IDisposable
         Assert.Equal("5120:88", u.ClientProcess);
         Assert.Equal("受注入力.exe", u.AppName);
         Assert.Equal("受注", u.AppDetail);
-        Assert.Equal(ProcInfoStates.Pending, u.ProcInfoState);
+        // w3wp.exe・sqlplus.exe 以外はプロセス情報を取得しない
+        Assert.Equal(ProcInfoStates.NotApplicable, u.ProcInfoState);
     }
 
     [Fact]
