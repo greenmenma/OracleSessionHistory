@@ -240,9 +240,9 @@ public static class DemoHistory
                     var end = logon.AddMinutes(rand.Next(1, 240));
                     if (end >= now.AddMinutes(-10)) continue; // 現在接続中のものは収集に任せる
                     var kind = Tracking.ProgramClassifier.Classify(p.Program, "USER", p.Module);
-                    // 接続アプリの表示を確認できるよう、クライアントは疑似プロセス情報で取得済みにしておく
+                    // 接続アプリの表示を確認できるよう、クライアント（w3wp.exe・sqlplus.exe のみ）は疑似プロセス情報で取得済みにしておく
                     var pid = rand.Next(1000, 9999);
-                    var proc = kind == ProcessKinds.Client ? Processes.DemoProcessInspector.Profile(p.Machine, pid, logon.AddHours(-1)) : null;
+                    var proc = kind == ProcessKinds.Client && Processes.ClientProcessRules.IsInspectedProgram(p.Program) ? Processes.DemoProcessInspector.Profile(p.Machine, pid, logon.AddHours(-1)) : null;
                     var (appName, appDetail) = Processes.AppIdentifier.Identify(proc, p.Program, p.Module ?? p.Program, p.OsUser);
                     list.Add(new TrackedSession
                     {

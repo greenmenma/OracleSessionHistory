@@ -65,7 +65,8 @@ public static class SessionTracker
                     row.DisconnectDetectedAt = null;
                     row.DisconnectUncertain = false;
                     // 切断扱いの間に「取得前に切断」で対象外にしたプロセス情報は取り直す（対象外の理由は次の取得で判定し直す）
-                    if (row.ProcessKind == ProcessKinds.Client && row.ProcInfoState == ProcInfoStates.NotApplicable)
+                    if (row.ProcessKind == ProcessKinds.Client && ClientProcessRules.IsInspectedProgram(row.Program)
+                        && row.ProcInfoState == ProcInfoStates.NotApplicable)
                     {
                         row.ProcInfoState = ProcInfoStates.Pending;
                         row.ProcInfoError = null;
@@ -88,8 +89,11 @@ public static class SessionTracker
                     IsConnected = true,
                 };
                 CopyObserved(o, row, now);
-                // プロセス情報は通常のクライアント接続のみ取得する（DB Link・Oracle 内部プロセスは接続元が DB サーバー自身）
-                row.ProcInfoState = row.ProcessKind == ProcessKinds.Client ? ProcInfoStates.Pending : ProcInfoStates.NotApplicable;
+                // プロセス情報は通常のクライアント接続のうち、取得対象のプログラム（w3wp.exe・sqlplus.exe）のみ取得する
+                // （DB Link・Oracle 内部プロセスは接続元が DB サーバー自身）
+                row.ProcInfoState = row.ProcessKind == ProcessKinds.Client && ClientProcessRules.IsInspectedProgram(row.Program)
+                    ? ProcInfoStates.Pending
+                    : ProcInfoStates.NotApplicable;
                 result.Added.Add(row);
             }
         }

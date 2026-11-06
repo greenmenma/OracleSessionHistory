@@ -32,16 +32,50 @@ public class SessionTrackerTests
     [Fact]
     public void 再接続したクライアントは対象外にしたプロセス情報を取り直す()
     {
-        var row = SessionTracker.Apply(1, [], Snap(T0, Obs(1)), null, Interval).Added.Single();
+        var row = SessionTracker.Apply(1, [], Snap(T0, Obs(1, program: "sqlplus.exe")), null, Interval).Added.Single();
         row.IsConnected = false;
         row.ProcInfoState = ProcInfoStates.NotApplicable;
         row.ProcInfoError = "切断までに取得できませんでした";
 
-        var r = SessionTracker.Apply(1, [row], Snap(T0.AddSeconds(5), Obs(1)), T0, Interval);
+        var r = SessionTracker.Apply(1, [row], Snap(T0.AddSeconds(5), Obs(1, program: "sqlplus.exe")), T0, Interval);
 
         Assert.Single(r.Reconnected);
         Assert.Equal(ProcInfoStates.Pending, row.ProcInfoState);
         Assert.Null(row.ProcInfoError);
+    }
+
+    [Theory]
+    [InlineData("w3wp.exe")]
+    [InlineData("SQLPLUS.EXE")]
+    public void w3wpとsqlplusの新規セッションはプロセス情報の取得待ち(string program)
+    {
+        var row = SessionTracker.Apply(1, [], Snap(T0, Obs(1, program: program)), null, Interval).Added.Single();
+
+        Assert.Equal(ProcInfoStates.Pending, row.ProcInfoState);
+    }
+
+    [Theory]
+    [InlineData("app.exe")]
+    [InlineData("dotnet.exe")]
+    [InlineData("JDBC Thin Client")]
+    public void w3wpとsqlplus以外の新規セッションはプロセス情報を取得しない(string program)
+    {
+        var row = SessionTracker.Apply(1, [], Snap(T0, Obs(1, program: program)), null, Interval).Added.Single();
+
+        Assert.Equal(ProcessKinds.Client, row.ProcessKind);
+        Assert.Equal(ProcInfoStates.NotApplicable, row.ProcInfoState);
+        Assert.Null(row.ProcInfoError);
+    }
+
+    [Fact]
+    public void w3wpとsqlplus以外は再接続してもプロセス情報を取得しない()
+    {
+        var row = SessionTracker.Apply(1, [], Snap(T0, Obs(1)), null, Interval).Added.Single();
+        row.IsConnected = false;
+
+        SessionTracker.Apply(1, [row], Snap(T0.AddSeconds(5), Obs(1)), T0, Interval);
+
+        Assert.Equal(ProcInfoStates.NotApplicable, row.ProcInfoState);
     }
 
     [Fact]

@@ -151,7 +151,8 @@ public sealed class AppDbMigrationTests : IDisposable
             "(1, 1, '(PROCESS)', 'PROCESS', 1, 2, 1, '2026-11-01 09:00:00', NULL, '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1), " +
             "(1, 1, '(PROCESS)', 'PROCESS', 1, 3, 1, '2026-11-01 09:00:00', ' ', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1)");
 
-        await migrator.MigrateAsync();
+        // 後のマイグレーション（w3wp.exe・sqlplus.exe 以外を対象外にする）の前まで適用する
+        await migrator.MigrateAsync(all[all.FindIndex(m => m.EndsWith("_SkipProcessInfoExceptIisAndSqlPlus")) - 1]);
 
         var sessions = await db.Sessions.OrderBy(s => s.Sid).ToListAsync();
         Assert.Equal([ProcessKinds.Self, ProcessKinds.Self, ProcessKinds.Client], sessions.Select(s => s.ProcessKind));
@@ -240,7 +241,8 @@ public sealed class AppDbMigrationTests : IDisposable
             "(1, 1, 1, '(PROCESS)', 'PROCESS', 1, 1, 1, '2026-11-01 09:00:00', 'OLD01', '古い.exe', 'Resolved', 3, '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1), " +
             "(2, 1, 1, '(PROCESS)', 'PROCESS', 1, 2, 1, '2026-11-01 09:00:00', 'KIKAN-AP01 ', 'IIS: Juchu', 'Resolved', 3, '2026-11-01 09:00:00', '2026-11-01 10:00:00', 1)");
 
-        await migrator.MigrateAsync();
+        // 後のマイグレーション（w3wp.exe・sqlplus.exe 以外を対象外にする）の影響を受けないよう、このマイグレーションまで適用する
+        await migrator.MigrateAsync(all.Single(m => m.EndsWith("_AddAncestryAndLinkOrigin")));
 
         var s = await db.Sessions.OrderBy(x => x.Id).ToListAsync();
         Assert.Equal((ProcInfoStates.Pending, (string?)null, "WEB01"), (s[0].ProcInfoState, s[0].ProcInfoError, s[0].Machine));
@@ -249,6 +251,45 @@ public sealed class AppDbMigrationTests : IDisposable
         Assert.Equal(ProcInfoStates.Pending, s[1].ProcInfoState);
         Assert.Equal(("KIKAN-AP01", "IIS: Juchu"), (s[2].LinkOriginMachine, s[2].LinkOriginApp));
         Assert.Null(s[0].LinkOriginApp);
+    }
+
+    [Fact]
+    public async Task w3wpとsqlplus以外の取得失敗などを理由なしの対象外にする()
+    {
+        await using var db = new AppDbContext(_sqliteOptions);
+        var migrator = db.GetService<IMigrator>();
+        var all = db.Database.GetMigrations().ToList();
+        await migrator.MigrateAsync(all[all.FindIndex(m => m.EndsWith("_SkipProcessInfoExceptIisAndSqlPlus")) - 1]);
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO Targets (Id, Name, Provider, ConnectionString, IntervalSeconds, LinkIntervalSeconds, IncludeBackground, CollectSqlText, Enabled, CreatedAt, UpdatedAt, ConsecutiveFailures) " +
+            "VALUES (1, 'T', 'Oracle', 'x', 5, 30, 0, 1, 1, '2026-11-01 00:00:00', '2026-11-01 00:00:00', 0)");
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO Sessions (Id, TargetId, InstId, Sid, Serial, LogonTime, Program, ProcessKind, AppName, ProcInfoState, ProcInfoError, ProcInfoAt, FirstSeenAt, LastSeenAt, IsConnected, DisconnectUncertain) VALUES " +
+            "(1, 1, 1, 1, 1, '2026-11-01 09:00:00', 'foo.exe', 'Client', 'foo.exe', 'Failed', 'タイムアウトしました', '2026-11-01 09:01:00', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1, 0), " +
+            "(2, 1, 1, 2, 1, '2026-11-01 09:00:00', 'foo.exe', 'Client', 'foo.exe', 'NotApplicable', '切断までに取得できませんでした', '2026-11-01 09:01:00', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 0, 0), " +
+            "(3, 1, 1, 3, 1, '2026-11-01 09:00:00', NULL, 'Client', '(不明)', 'Pending', NULL, NULL, '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1, 0), " +
+            "(4, 1, 1, 4, 1, '2026-11-01 09:00:00', 'dotnet.exe', 'Client', 'Api.dll', 'Resolved', NULL, '2026-11-01 09:01:00', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1, 0), " +
+            "(5, 1, 1, 5, 1, '2026-11-01 09:00:00', ' W3WP.EXE ', 'Client', 'w3wp.exe', 'Failed', 'タイムアウトしました', '2026-11-01 09:01:00', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1, 0), " +
+            "(6, 1, 1, 6, 1, '2026-11-01 09:00:00', 'sqlplus.exe', 'Client', 'sqlplus.exe', 'NotFound', 'プロセスが見つかりません（終了済み）', '2026-11-01 09:01:00', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 0, 0)");
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO LinkSources (Id, TargetId, Name, Provider, ConnectionString, Enabled, SelectedLinks, CreatedAt, UpdatedAt) " +
+            "VALUES (1, 1, 'L', 'Oracle', 'y', 1, '[]', '2026-11-01 00:00:00', '2026-11-01 00:00:00')");
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO DbLinkUsages (Id, LinkSourceId, TargetId, DbLinkName, MatchType, InstId, Sid, Serial, LogonTime, Program, AppName, ProcInfoState, ProcInfoError, FirstSeenAt, LastSeenAt, HitCount) VALUES " +
+            "(1, 1, 1, '(PROCESS)', 'PROCESS', 1, 1, 1, '2026-11-01 09:00:00', 'foo.exe', 'foo.exe', 'Mismatch', '別のプロセスの可能性があるため紐付けません', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1), " +
+            "(2, 1, 1, '(PROCESS)', 'PROCESS', 1, 2, 1, '2026-11-01 09:00:00', 'sqlplus.exe', 'sqlplus.exe', 'Failed', 'タイムアウトしました', '2026-11-01 09:00:00', '2026-11-01 09:00:00', 1)");
+
+        await migrator.MigrateAsync();
+
+        var s = await db.Sessions.OrderBy(x => x.Id).ToListAsync();
+        foreach (var i in new[] { 0, 1, 2 })
+            Assert.Equal((ProcInfoStates.NotApplicable, (string?)null, (DateTime?)null), (s[i].ProcInfoState, s[i].ProcInfoError, s[i].ProcInfoAt));
+        Assert.Equal((ProcInfoStates.Resolved, "Api.dll"), (s[3].ProcInfoState, s[3].AppName)); // 取得済みはそのまま
+        Assert.Equal((ProcInfoStates.Failed, "タイムアウトしました"), (s[4].ProcInfoState, s[4].ProcInfoError));
+        Assert.Equal(ProcInfoStates.NotFound, s[5].ProcInfoState);
+        var u = await db.DbLinkUsages.OrderBy(x => x.Id).ToListAsync();
+        Assert.Equal((ProcInfoStates.NotApplicable, (string?)null), (u[0].ProcInfoState, u[0].ProcInfoError));
+        Assert.Equal(ProcInfoStates.Failed, u[1].ProcInfoState);
     }
 
     /// <summary>マイグレーション導入前（EnsureCreated）の DB を再現する：Initial のスキーマを作り、履歴テーブルを消す</summary>

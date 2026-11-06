@@ -255,15 +255,16 @@ public sealed class ProcessInfoServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task JDBCの既定のPROCESSは問い合わせず理由を残す()
+    public async Task JDBCの接続は問い合わせない()
     {
+        // JDBC Thin の PROGRAM は取得対象外のため、PROCESS の既定値の判定より先に除かれる（理由は残さない）
         var id = AddSession(1, "APP01", "1234", program: "JDBC Thin Client");
 
         await _service.RunOnceAsync(default);
 
         var s = Get(id);
         Assert.Equal(ProcInfoStates.NotApplicable, s.ProcInfoState);
-        Assert.Contains("JDBC", s.ProcInfoError);
+        Assert.Null(s.ProcInfoError);
         Assert.Empty(_inspector.Calls);
     }
 
@@ -404,16 +405,47 @@ public sealed class ProcessInfoServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task DBLink利用元のexeのフォルダを記録する()
+    public async Task DBLink利用元のsqlplusのフォルダを記録する()
     {
-        var id = AddUsage(1, "KIKAN-AP02", "77", "在庫照会.exe");
-        _inspector.Results["KIKAN-AP02"] = [new(77, "在庫照会.exe", @"D:\Kikan\在庫照会.exe", null, @"CORP\kikan02", Logon.AddHours(-1), "explorer.exe", null, null)];
+        var id = AddUsage(1, "KIKAN-AP02", "77", "sqlplus.exe");
+        _inspector.Results["KIKAN-AP02"] = [new(77, "sqlplus.exe", @"D:\oracle\bin\sqlplus.exe", null, @"CORP\kikan02", Logon.AddHours(-1), null, null, null)];
 
         await _service.RunOnceAsync(default);
 
         var u = GetUsage(id);
         Assert.Equal(ProcInfoStates.Resolved, u.ProcInfoState);
-        Assert.Equal(("在庫照会.exe", @"D:\Kikan"), (u.AppName, u.AppDetail));
+        Assert.Equal(("sqlplus.exe", @"D:\oracle\bin"), (u.AppName, u.AppDetail));
+    }
+
+    [Theory]
+    [InlineData(ProcInfoStates.Pending)]
+    [InlineData(ProcInfoStates.Failed)]
+    public async Task w3wpとsqlplus以外は問い合わせず理由も残さない(string state)
+    {
+        var session = AddSession(1, "APP01", "100", program: "在庫照会.exe", state: state);
+        var usage = AddUsage(2, "APP01", "200", "dotnet.exe", state: state);
+        using (var db = _factory.CreateDbContext())
+            db.Sessions.Where(s => s.Id == session).ExecuteUpdate(x => x.SetProperty(s => s.ProcInfoError, "タイムアウトしました"));
+
+        await _service.RunOnceAsync(default);
+
+        Assert.Empty(_inspector.Calls);
+        Assert.Equal((ProcInfoStates.NotApplicable, (string?)null, (DateTime?)null),
+            (Get(session).ProcInfoState, Get(session).ProcInfoError, Get(session).ProcInfoAt));
+        Assert.Equal((ProcInfoStates.NotApplicable, (string?)null), (GetUsage(usage).ProcInfoState, GetUsage(usage).ProcInfoError));
+    }
+
+    [Fact]
+    public async Task 設定の保存でw3wpとsqlplus以外は取得待ちに戻さない()
+    {
+        var other = AddSession(1, "APP01", "1", program: "在庫照会.exe", state: ProcInfoStates.NotApplicable);
+        var sqlplus = AddSession(2, "APP01", "2", program: "SQLPLUS.EXE", state: ProcInfoStates.NotApplicable);
+
+        using (var db = _factory.CreateDbContext())
+            await ProcessInfoService.RequeueSkippedAsync(db, default);
+
+        Assert.Equal(ProcInfoStates.NotApplicable, Get(other).ProcInfoState);
+        Assert.Equal(ProcInfoStates.Pending, Get(sqlplus).ProcInfoState);
     }
 
     [Fact]
