@@ -12,7 +12,7 @@ namespace OracleSessionHistory.Core.Processes;
 
 /// <summary>
 /// WMI/CIM（Win32_Process）で接続元サーバーのプロセス情報を取得する（Windows のみ）。
-/// WinRM（WS-Man）で接続し、失敗した場合は DCOM を試す。成功したプロトコルはホストごとに覚えておく。
+/// DCOM で接続する（WinRM は権限不足の環境でタイムアウトまで待たされるため使わない）。
 /// </summary>
 public sealed class CimProcessInspector(ILogger<CimProcessInspector> logger) : IProcessInspector
 {
@@ -25,10 +25,6 @@ public sealed class CimProcessInspector(ILogger<CimProcessInspector> logger) : I
     // GetOwner はインスタンスのキー（Handle）が必要なため SELECT に含める
     private static readonly TimeSpan IisCacheDuration = TimeSpan.FromHours(1);
 
-    private enum Protocol { WsMan, Dcom }
-
-    /// <summary>ホスト → 接続できたプロトコル</summary>
-    private readonly ConcurrentDictionary<string, Protocol> _protocols = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>(ホスト, プール) → IIS のサイト／パス（null は取得できなかった）</summary>
     private readonly ConcurrentDictionary<(string Host, string Pool), (string? Site, DateTime At)> _iisSites = new();
 
@@ -45,9 +41,9 @@ public sealed class CimProcessInspector(ILogger<CimProcessInspector> logger) : I
         {
             if (!OperatingSystem.IsWindows()) throw NotSupported();
             var target = await ResolveHostAsync(host, options.DnsSuffix, ct);
-            var (count, protocol) = WithSession(target, options, ct, (session, op) =>
+            var count = WithSession(target, options, ct, (session, op) =>
                 session.QueryInstances(CimV2, "WQL", "SELECT ProcessId FROM Win32_Process", op).Count());
-            return $"{target} に {(protocol == Protocol.WsMan ? "WinRM" : "DCOM")} で接続し、{count} 件のプロセスを取得しました";
+            return $"{target} に DCOM で接続し、{count} 件のプロセスを取得しました";
         }, ct);
     }
 
@@ -57,7 +53,7 @@ public sealed class CimProcessInspector(ILogger<CimProcessInspector> logger) : I
     private async Task<IReadOnlyList<ClientProcessInfo>> InspectCoreAsync(string host, IReadOnlyCollection<int> pids, ProcessInspectorOptions options, CancellationToken ct)
     {
         var target = await ResolveHostAsync(host, options.DnsSuffix, ct);
-        var (result, _) = WithSession(target, options, ct, (session, op) =>
+        var result = WithSession(target, options, ct, (session, op) =>
         {
             var rows = new List<ClientProcessInfo>();
             var parents = new Dictionary<int, int>();
@@ -110,48 +106,36 @@ public sealed class CimProcessInspector(ILogger<CimProcessInspector> logger) : I
     }
 
     /// <summary>
-    /// CIM セッションを作って処理を実行する。前回成功したプロトコル（初回は WinRM）で失敗した場合はもう一方を試す。
-    /// どちらも失敗した場合は <see cref="ProcessInspectionException"/>。
+    /// DCOM の CIM セッションを作って処理を実行する。失敗した場合は <see cref="ProcessInspectionException"/>。
     /// </summary>
     [SupportedOSPlatform("windows")]
-    private (T Result, Protocol Protocol) WithSession<T>(string host, ProcessInspectorOptions options, CancellationToken ct,
+    private T WithSession<T>(string host, ProcessInspectorOptions options, CancellationToken ct,
         Func<CimSession, CimOperationOptions, T> action)
     {
-        var first = _protocols.TryGetValue(host, out var known) ? known : Protocol.WsMan;
-        Exception? firstError = null;
-        foreach (var protocol in new[] { first, first == Protocol.WsMan ? Protocol.Dcom : Protocol.WsMan })
+        ct.ThrowIfCancellationRequested();
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            try
-            {
-                using var sessionOptions = CreateSessionOptions(protocol, options);
-                using var session = CimSession.Create(host, sessionOptions);
-                using var op = new CimOperationOptions { Timeout = options.Timeout, CancellationToken = ct };
-                var result = action(session, op);
-                _protocols[host] = protocol;
-                return (result, protocol);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex) when (ex is CimException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
-            {
-                logger.LogDebug(ex, "{Host} への {Protocol} 接続に失敗しました", host, protocol);
-                firstError ??= ex;
-            }
+            using var sessionOptions = CreateSessionOptions(options);
+            using var session = CimSession.Create(host, sessionOptions);
+            using var op = new CimOperationOptions { Timeout = options.Timeout, CancellationToken = ct };
+            return action(session, op);
         }
-        throw new ProcessInspectionException(Describe(firstError!), firstError);
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is CimException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            logger.LogDebug(ex, "{Host} への DCOM 接続に失敗しました", host);
+            throw new ProcessInspectionException(Describe(ex), ex);
+        }
     }
 
     [SupportedOSPlatform("windows")]
-    private static CimSessionOptions CreateSessionOptions(Protocol protocol, ProcessInspectorOptions options)
+    private static CimSessionOptions CreateSessionOptions(ProcessInspectorOptions options)
     {
-        CimSessionOptions so = protocol == Protocol.WsMan
-            ? new WSManSessionOptions()
-            // IIS の WMI（root\WebAdministration）は暗号化（PacketPrivacy）が必須
-            : new DComSessionOptions { PacketPrivacy = true, PacketIntegrity = true };
-        so.Timeout = options.Timeout;
+        // IIS の WMI（root\WebAdministration）は暗号化（PacketPrivacy）が必須
+        var so = new DComSessionOptions { PacketPrivacy = true, PacketIntegrity = true, Timeout = options.Timeout };
         if (!string.IsNullOrWhiteSpace(options.UserName))
         {
             var (domain, user) = SplitUser(options.UserName.Trim());
@@ -318,7 +302,7 @@ public sealed class CimProcessInspector(ILogger<CimProcessInspector> logger) : I
     {
         CimException { NativeErrorCode: NativeErrorCode.AccessDenied } => "アクセスが拒否されました（アカウントの権限を確認してください）",
         UnauthorizedAccessException => "アクセスが拒否されました（アカウントの権限を確認してください）",
-        CimException cim => $"WinRM/DCOM で接続できません: {cim.Message}",
+        CimException cim => $"DCOM で接続できません: {cim.Message}",
         _ => ex.Message,
     };
 }

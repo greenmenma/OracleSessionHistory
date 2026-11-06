@@ -89,7 +89,7 @@ User Id=MONITOR;Password=xxxx;Data Source=(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(H
 
 ## 接続アプリの特定（プロセス情報の取得）
 
-「設定」→「プロセス情報の取得」で、接続元サーバーに問い合わせるドメインアカウントを登録して有効にします。接続先サーバーの準備（WinRM / DCOM・権限）は [process-info.md](process-info.md) を参照してください。
+「設定」→「プロセス情報の取得」で、接続元サーバーに問い合わせるドメインアカウントを登録して有効にします。接続先サーバーの準備（DCOM・権限）は [process-info.md](process-info.md) を参照してください。
 
 ## 本番配置
 
