@@ -1,4 +1,5 @@
-import { api } from '../api'
+import { useState } from 'react'
+import { api, type TargetSummary } from '../api'
 import { useAsync } from '../hooks'
 import { fmtDateTime } from '../format'
 import { navigate } from '../router'
@@ -15,13 +16,12 @@ export default function SummaryPage({ targetId }: { targetId?: number }) {
       </div>
       {error && <div className="alert error">{error}</div>}
 
-      <div className="tiles">
+      {/* 接続アプリ表をスクロールせずに見られるよう、サマリーは 1 行の数値と監視対象の状態にまとめ、内訳・ランキングは折りたたむ */}
+      <div className="tiles compact">
         <Tile label="接続数" value={data?.connections} onClick={() => navigate('/sessions', { state: 'connected' })} />
         <Tile label="アプリ数" value={data?.apps} note="接続中のアプリ（IIS プール・exe 等）" onClick={() => document.getElementById('connection-counts')?.scrollIntoView({ behavior: 'smooth' })} />
         <Tile label="端末数" value={data?.terminals} note="接続中の実行端末" />
         <Tile label="履歴数" value={data?.history} note="切断済みセッション" onClick={() => navigate('/sessions', { state: 'disconnected' })} />
-      </div>
-      <div className="tiles small">
         <Tile label="本日のログオン" value={data?.todayLogons} />
         <Tile
           label="DB Linkの可能性"
@@ -30,8 +30,29 @@ export default function SummaryPage({ targetId }: { targetId?: number }) {
         />
       </div>
 
-      <section className="card">
-        <h2>監視対象の状態</h2>
+      <div className="target-states">
+        <span className="muted">監視対象</span>
+        {data?.targets.map((t) => (
+          <span key={t.id} className="target-state" title={`最終取得成功 ${fmtDateTime(t.lastSuccessAt) || '–'}${t.lastError ? `\n${t.lastError}` : ''}`}>
+            {t.name}
+            <TargetStateBadge t={t} />
+          </span>
+        ))}
+        {data && data.targets.length === 0 && (
+          <span>
+            監視対象がありません。<a href="#/settings">設定</a>から追加してください。
+          </span>
+        )}
+        {data?.targets
+          .filter((t) => t.enabled && t.lastError)
+          .map((t) => (
+            <span key={t.id} className="error-text ellipsis" title={t.lastError ?? ''}>
+              {t.name}：{t.lastError}
+            </span>
+          ))}
+      </div>
+
+      <Fold id="targets" title="監視対象ごとの内訳">
         <div className="table-wrap">
           <table>
             <thead>
@@ -55,43 +76,30 @@ export default function SummaryPage({ targetId }: { targetId?: number }) {
                     {t.provider !== 'Oracle' && <span className="badge gray">{t.provider}</span>}
                   </td>
                   <td>
-                    {!t.enabled ? (
-                      <span className="badge gray">停止</span>
-                    ) : t.consecutiveFailures > 0 ? (
-                      <span className="badge red">取得失敗 {t.consecutiveFailures}回</span>
-                    ) : t.lastSuccessAt ? (
-                      <span className="badge green">収集中</span>
-                    ) : (
-                      <span className="badge gray">待機</span>
-                    )}
+                    <TargetStateBadge t={t} />
                   </td>
                   <td className="num">{t.connections}</td>
                   <td className="num">{t.apps}</td>
                   <td className="num">{t.terminals}</td>
                   <td className="num">{t.history}</td>
                   <td className="num">{t.dbLinkSuspects}</td>
-                  <td>{fmtDateTime(t.lastSuccessAt)}</td>
+                  <td className="nowrap">{fmtDateTime(t.lastSuccessAt)}</td>
                   <td className="error-text ellipsis" title={t.lastError ?? ''}>
                     {t.lastError}
                   </td>
                 </tr>
               ))}
-              {data && data.targets.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="empty">
-                    監視対象がありません。<a href="#/settings">設定</a>から追加してください。
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
-      </section>
+      </Fold>
 
-      <div className="two-col">
-        <Ranking title="接続数の多いアプリ" items={data?.topApps} param="app" />
-        <Ranking title="接続数の多い端末" items={data?.topMachines} param="machine" />
-      </div>
+      <Fold id="ranking" title="接続数の多いアプリ・端末">
+        <div className="two-col">
+          <Ranking title="接続数の多いアプリ" items={data?.topApps} param="app" />
+          <Ranking title="接続数の多い端末" items={data?.topMachines} param="machine" />
+        </div>
+      </Fold>
 
       <ConnectionCountsSection targetId={targetId} />
     </div>
@@ -100,7 +108,7 @@ export default function SummaryPage({ targetId }: { targetId?: number }) {
 
 function Tile({ label, value, note, onClick }: { label: string; value?: number; note?: string; onClick?: () => void }) {
   return (
-    <div className={`tile ${onClick ? 'clickable' : ''}`} onClick={onClick}>
+    <div className={`tile ${onClick ? 'clickable' : ''}`} onClick={onClick} title={note}>
       <div className="tile-label">{label}</div>
       <div className="tile-value">{value ?? '–'}</div>
       {note && <div className="tile-note">{note}</div>}
@@ -129,5 +137,44 @@ function Ranking({ title, items, param }: { title: string; items?: { name: strin
         {items && items.length === 0 && <li className="empty">接続中のセッションはありません</li>}
       </ul>
     </section>
+  )
+}
+
+function TargetStateBadge({ t }: { t: TargetSummary }) {
+  if (!t.enabled) return <span className="badge gray">停止</span>
+  if (t.consecutiveFailures > 0) return <span className="badge red">取得失敗 {t.consecutiveFailures}回</span>
+  if (t.lastSuccessAt) return <span className="badge green">収集中</span>
+  return <span className="badge gray">待機</span>
+}
+
+const FOLD_KEY = 'summary.fold.'
+
+/** 折りたたみ（開いたかどうかはブラウザに覚える。保存できない環境では閉じた状態から始める） */
+function Fold({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem(FOLD_KEY + id) === 'open'
+    } catch {
+      return false
+    }
+  })
+  return (
+    <details
+      className="card fold"
+      open={open}
+      onToggle={(e) => {
+        const v = e.currentTarget.open
+        setOpen(v)
+        try {
+          if (v) localStorage.setItem(FOLD_KEY + id, 'open')
+          else localStorage.removeItem(FOLD_KEY + id)
+        } catch {
+          // 保存できなくても表示には影響しない
+        }
+      }}
+    >
+      <summary>{title}</summary>
+      {open && <div className="fold-body">{children}</div>}
+    </details>
   )
 }
