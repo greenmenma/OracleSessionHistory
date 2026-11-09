@@ -79,6 +79,49 @@ public sealed class AdUserDirectory(ILogger<AdUserDirectory> logger) : IUserDire
         return result;
     }
 
+    public Task<IReadOnlyList<DirectoryPerson>> SearchAsync(string query, int max, CancellationToken ct) =>
+        Task.Run(() => OperatingSystem.IsWindows()
+            ? Search(query, max)
+            : throw new UserDirectoryException("この OS では AD に問い合わせできません（Windows のみ）"), ct);
+
+    /// <summary>
+    /// 実行アカウントのドメインで、有効なユーザを探す。anr（名前・姓・名・アカウント・メールの前方一致）と表示名の部分一致
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private IReadOnlyList<DirectoryPerson> Search(string query, int max)
+    {
+        var q = UserAccountRules.EscapeLdap(query.Trim());
+        try
+        {
+            using var root = new DirectoryEntry("");
+            using var searcher = new DirectorySearcher(root,
+                $"(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2))(|(anr={q})(displayName=*{q}*)))",
+                ["sAMAccountName", "userPrincipalName", "displayName", "department", "mail"])
+            {
+                SizeLimit = max,
+                ClientTimeout = TimeSpan.FromSeconds(10),
+                ServerTimeLimit = TimeSpan.FromSeconds(10),
+            };
+            searcher.Sort = new SortOption("displayName", SortDirection.Ascending);
+            using var found = searcher.FindAll();
+            var people = new List<DirectoryPerson>();
+            foreach (SearchResult r in found)
+            {
+                var account = First(r, "userPrincipalName") ?? First(r, "sAMAccountName");
+                if (string.IsNullOrWhiteSpace(account)) continue;
+                var name = First(r, "displayName");
+                people.Add(new DirectoryPerson(account.Trim(), string.IsNullOrWhiteSpace(name) ? account.Trim() : name.Trim(),
+                    First(r, "department"), First(r, "mail")));
+            }
+            return people;
+        }
+        catch (Exception ex) when (ex is COMException or DirectoryServicesCOMException or InvalidOperationException)
+        {
+            logger.LogWarning(ex, "AD でユーザを検索できませんでした（{Query}）", query);
+            throw new UserDirectoryException($"AD に接続できません: {ex.Message}", ex);
+        }
+    }
+
     [SupportedOSPlatform("windows")]
     private static string? First(SearchResult r, string name) =>
         r.Properties[name] is { Count: > 0 } v ? v[0]?.ToString() : null;

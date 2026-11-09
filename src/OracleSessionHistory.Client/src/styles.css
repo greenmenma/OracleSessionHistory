@@ -92,6 +92,10 @@ table.counts thead th { z-index: 2; }
 table.counts tfoot td { position: sticky; bottom: 0; z-index: 2; box-shadow: 0 -1px 0 var(--border); }
 table.counts th:first-child, table.counts td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); box-shadow: 1px 0 0 var(--border); }
 table.counts thead th:first-child, table.counts tfoot td:first-child { z-index: 3; background: var(--surface-2); }
+/* セッション履歴の列は右端に固定する（横にスクロールしても「履歴 →」を押せる） */
+table.counts .sticky-right { position: sticky; right: 0; z-index: 1; background: var(--surface); box-shadow: -1px 0 0 var(--border); }
+table.counts thead th.sticky-right, table.counts tfoot td.sticky-right { z-index: 3; background: var(--surface-2); }
+table.tree tr.tree-machine.depth-0 td.sticky-right { background: var(--surface-2); }
 /* 行の情報（日本語名・メモ・対応担当者） */
 .tree-display-name { font-weight: 700; margin-right: 6px; }
 .tree-name.sub-name { color: var(--muted); font-size: 12px; font-weight: 400; }
@@ -106,9 +110,24 @@ button.assignee.empty { color: var(--muted); opacity: .6; }
 .assignee-sub { white-space: nowrap; color: var(--muted); font-size: 11px; }
 .modal .field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
 .modal .field input { color: var(--text); }
-.sub-assignees { display: flex; flex-direction: column; gap: 4px; }
-.sub-assignee { display: flex; gap: 4px; align-items: center; }
-.sub-assignee input { flex: 1; }
+/* AD から人を選ぶ入力欄 */
+.person-picker { position: relative; }
+.person-picker input { width: 100%; color: var(--text); }
+.person-results {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 30; margin: 2px 0 0; padding: 4px 0; list-style: none;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.15);
+  max-height: 240px; overflow-y: auto; font-size: 13px; color: var(--text);
+}
+.person-results li { padding: 4px 10px; display: flex; flex-direction: column; cursor: pointer; }
+.person-results li.active { background: var(--surface-2); }
+.person-results li .muted { font-size: 11px; }
+.person-name { font-weight: 600; }
+.person-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.person-chip {
+  display: inline-flex; align-items: center; gap: 2px; align-self: flex-start; padding: 2px 4px 2px 10px;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--surface-2); color: var(--text); font-size: 13px;
+}
+.person-chip button { background: none; border: none; padding: 0 4px; margin: 0; color: var(--muted); font-size: 11px; }
 textarea.memo-input { font-family: inherit; font-size: 13px; color: var(--text); }
 .node-path { font-size: 12px; overflow-wrap: anywhere; }
 

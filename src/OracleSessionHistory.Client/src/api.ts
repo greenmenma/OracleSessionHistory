@@ -264,9 +264,23 @@ export interface NodeNote {
   /** メモ（このアプリは何か等） */
   memo: string | null
   /** メインの対応担当者 */
-  mainAssignee: string | null
+  mainAssignee: Assignee | null
   /** サブの対応担当者 */
-  subAssignees: string[]
+  subAssignees: Assignee[]
+}
+
+/** 対応担当者（AD から選んだ人） */
+export interface Assignee {
+  /** AD のアカウント（userPrincipalName、無ければ sAMAccountName） */
+  account: string
+  /** 選んだ時点の AD の表示名 */
+  displayName: string
+}
+
+/** AD で見つけた人 */
+export interface DirectoryPerson extends Assignee {
+  department: string | null
+  mail: string | null
 }
 
 /** 担当者での絞り込みで、担当者が決まっていない行を表す値（Server の ConnectionTreeKeys.Unassigned） */
@@ -384,7 +398,7 @@ export const api = {
   session: (id: number) => request<SessionDetail>('GET', `api/sessions/${id}`),
   /** 実行ユーザの表示名（アカウントを大文字にした値 → AD の displayName） */
   userNames: () => request<Record<string, string>>('GET', 'api/user-names'),
-  /** assignee：担当者で絞り込む（UNASSIGNED は担当者が決まっていない行） */
+  /** assignee：担当者（AD のアカウント）で絞り込む（UNASSIGNED は担当者が決まっていない行） */
   connectionCounts: (targetId?: number, q?: string, assignee?: string) =>
     request<ConnectionCounts>('GET', `api/connection-counts${qs({ targetId, q, assignee })}`),
 
@@ -403,8 +417,10 @@ export const api = {
   updateProcessSettings: (s: ProcessSettingsInput) => request<ProcessSettings>('PUT', 'api/process-settings', s),
   testProcessSettings: (host: string, settings: ProcessSettingsInput) =>
     request<{ success: boolean; message: string }>('POST', 'api/process-settings/test', { host, settings }),
-  /** 接続アプリ表の担当者の絞り込み・入力の候補（設定済みのメイン・サブの担当者） */
-  assignees: () => request<string[]>('GET', 'api/assignees'),
+  /** 接続アプリ表の担当者の絞り込みの候補（設定済みのメイン・サブの担当者） */
+  assignees: () => request<Assignee[]>('GET', 'api/assignees'),
+  /** 担当者を選ぶための AD の検索（名前・アカウント・メールアドレス） */
+  searchPeople: (q: string) => request<DirectoryPerson[]>('GET', `api/directory/people${qs({ q })}`),
   /** 接続アプリ表の行の日本語名・メモ・対応担当者を保存する（すべて空なら設定を外す） */
   saveNodeNote: (nodeKey: string, note: NodeNote) =>
     request<{ note: NodeNote | null }>('PUT', 'api/node-notes', { nodeKey, ...note }),

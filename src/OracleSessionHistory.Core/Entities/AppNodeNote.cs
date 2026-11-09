@@ -15,17 +15,30 @@ public class AppNodeNote
     /// <summary>メモ（このアプリは何か、問い合わせ先など）</summary>
     public string? Memo { get; set; }
 
-    /// <summary>メインの対応担当者</summary>
-    public string? MainAssignee { get; set; }
-
-    /// <summary>サブの対応担当者（複数。<see cref="AppNodeNoteLimits.SubSeparator"/> 区切り）</summary>
-    public string? SubAssignees { get; set; }
-
     public DateTime UpdatedAt { get; set; }
 
-    /// <summary>サブの対応担当者の一覧</summary>
-    public IReadOnlyList<string> SubAssigneeList =>
-        string.IsNullOrEmpty(SubAssignees) ? [] : SubAssignees.Split(AppNodeNoteLimits.SubSeparator);
+    /// <summary>対応担当者（AD から選んだ人。メイン 1 人とサブ複数）</summary>
+    public List<AppNodeAssignee> Assignees { get; set; } = [];
+}
+
+/// <summary>接続アプリ表の行の対応担当者（AD から選んだ人）</summary>
+public class AppNodeAssignee
+{
+    public long Id { get; set; }
+
+    public string NodeKey { get; set; } = "";
+
+    /// <summary>メインの担当者か（false はサブ）</summary>
+    public bool IsMain { get; set; }
+
+    /// <summary>サブの並び順</summary>
+    public int SortOrder { get; set; }
+
+    /// <summary>AD のアカウント（userPrincipalName、無ければ sAMAccountName）</summary>
+    public string Account { get; set; } = "";
+
+    /// <summary>選んだ時点の AD の表示名</summary>
+    public string DisplayName { get; set; } = "";
 }
 
 /// <summary><see cref="AppNodeNote"/> の列の長さ</summary>
@@ -40,15 +53,9 @@ public static class AppNodeNoteLimits
     /// <summary>メモの最大長</summary>
     public const int MemoLength = 1000;
 
-    /// <summary>担当者 1 人の名前の最大長</summary>
-    public const int AssigneeLength = 100;
+    /// <summary>担当者のアカウント・表示名の最大長</summary>
+    public const int AccountLength = 256;
 
     /// <summary>サブの担当者の最大人数</summary>
     public const int MaxSubAssignees = 10;
-
-    /// <summary>サブの担当者の列の長さ（最大人数分の名前と区切り）</summary>
-    public const int SubAssigneesLength = (AssigneeLength + 1) * MaxSubAssignees;
-
-    /// <summary>サブの担当者の区切り（名前に改行は含めない）</summary>
-    public const char SubSeparator = '\n';
 }

@@ -170,5 +170,8 @@ public sealed class UserNameServiceTests : IDisposable
             return Task.FromResult<IReadOnlyDictionary<string, string?>>(
                 accounts.ToDictionary(a => a, a => Names.TryGetValue(a, out var n) ? n : null));
         }
+
+        public Task<IReadOnlyList<DirectoryPerson>> SearchAsync(string query, int max, CancellationToken ct) =>
+            throw new NotSupportedException();
     }
 }

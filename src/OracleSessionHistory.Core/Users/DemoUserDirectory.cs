@@ -11,6 +11,26 @@ public sealed class DemoUserDirectory : IUserDirectory
         ["svc_osh"] = "接続履歴サービス", ["kikan02"] = "基幹 担当02", ["batch"] = "基幹バッチ",
     };
 
+    /// <summary>デモの人（担当者の検索用）。アカウントは user@demo.local</summary>
+    private static readonly DirectoryPerson[] People =
+    [
+        new("yamada@demo.local", "山田 太郎", "情報システム課", "yamada@demo.local"),
+        new("suzuki@demo.local", "鈴木 花子", "情報システム課", "suzuki@demo.local"),
+        new("tanaka@demo.local", "田中 一郎", "営業部", "tanaka@demo.local"),
+        new("sato@demo.local", "佐藤 次郎", "経理部", "sato@demo.local"),
+        new("takahashi@demo.local", "高橋 三郎", "情報システム課", "takahashi@demo.local"),
+        new("ito@demo.local", "伊藤 美咲", "製造部", "ito@demo.local"),
+    ];
+
+    public Task<IReadOnlyList<DirectoryPerson>> SearchAsync(string query, int max, CancellationToken ct)
+    {
+        var q = query.Trim();
+        return Task.FromResult<IReadOnlyList<DirectoryPerson>>(People
+            .Where(p => p.DisplayName.Replace(" ", "").Contains(q.Replace(" ", ""), StringComparison.OrdinalIgnoreCase)
+                        || p.Account.StartsWith(q, StringComparison.OrdinalIgnoreCase))
+            .Take(max).ToList());
+    }
+
     public Task<IReadOnlyDictionary<string, string?>> LookupAsync(IReadOnlyCollection<string> accounts, CancellationToken ct) =>
         Task.FromResult<IReadOnlyDictionary<string, string?>>(accounts.ToDictionary(a => a, a =>
         {

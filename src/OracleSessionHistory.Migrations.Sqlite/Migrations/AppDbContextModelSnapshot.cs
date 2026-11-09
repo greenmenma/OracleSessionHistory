@@ -17,6 +17,43 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
 
+            modelBuilder.Entity("OracleSessionHistory.Core.Entities.AppNodeAssignee", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Account")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsMain")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("NodeKey")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Account");
+
+                    b.HasIndex("NodeKey", "Account")
+                        .IsUnique();
+
+                    b.ToTable("AppNodeAssignees");
+                });
+
             modelBuilder.Entity("OracleSessionHistory.Core.Entities.AppNodeNote", b =>
                 {
                     b.Property<string>("NodeKey")
@@ -27,16 +64,8 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("MainAssignee")
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("Memo")
                         .HasMaxLength(1000)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SubAssignees")
-                        .HasMaxLength(1010)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -620,6 +649,15 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
                     b.ToTable("Sessions");
                 });
 
+            modelBuilder.Entity("OracleSessionHistory.Core.Entities.AppNodeAssignee", b =>
+                {
+                    b.HasOne("OracleSessionHistory.Core.Entities.AppNodeNote", null)
+                        .WithMany("Assignees")
+                        .HasForeignKey("NodeKey")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("OracleSessionHistory.Core.Entities.AuditLogonCount", b =>
                 {
                     b.HasOne("OracleSessionHistory.Core.Entities.MonitorTarget", "Target")
@@ -668,6 +706,11 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
                         .IsRequired();
 
                     b.Navigation("Target");
+                });
+
+            modelBuilder.Entity("OracleSessionHistory.Core.Entities.AppNodeNote", b =>
+                {
+                    b.Navigation("Assignees");
                 });
 
             modelBuilder.Entity("OracleSessionHistory.Core.Entities.MonitorTarget", b =>
