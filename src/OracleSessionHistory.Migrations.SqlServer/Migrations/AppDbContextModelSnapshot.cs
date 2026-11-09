@@ -22,6 +22,25 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("OracleSessionHistory.Core.Entities.AppAssignee", b =>
+                {
+                    b.Property<string>("NodeKey")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Assignee")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("NodeKey");
+
+                    b.ToTable("AppAssignees");
+                });
+
             modelBuilder.Entity("OracleSessionHistory.Core.Entities.AuditLogonCount", b =>
                 {
                     b.Property<long>("Id")

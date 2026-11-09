@@ -77,6 +77,27 @@ h4 { font-size: 13px; margin: 8px 0; }
 .page-head { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
 .counts-section { display: flex; flex-direction: column; gap: 16px; margin-top: 8px; scroll-margin-top: 16px; }
 .counts-section .page-head h2 { font-size: 18px; margin: 0; }
+.help { cursor: help; }
+.inline-search { display: flex; gap: 4px; margin-left: auto; }
+.inline-search input { width: 360px; max-width: 50vw; }
+
+/* サマリー：接続アプリ表がメイン。ページを画面の高さ（.main の上下の余白を除く）に収め、表の中だけをスクロールする。
+   見出し（thead）・合計（tfoot）・先頭列は固定し、スクロールバーは常に画面内に出る */
+.summary-page { height: calc(100vh - 40px); min-height: 520px; gap: 10px; }
+.summary-page .counts-section { flex: 1; min-height: 320px; gap: 8px; margin-top: 0; }
+.summary-page .counts-card { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 8px 12px; }
+.summary-page .counts-card .table-head { margin-bottom: 6px; }
+.summary-page .counts-card .table-wrap { flex: 1; min-height: 0; overflow: auto; }
+table.counts thead th { z-index: 2; }
+table.counts tfoot td { position: sticky; bottom: 0; z-index: 2; box-shadow: 0 -1px 0 var(--border); }
+table.counts th:first-child, table.counts td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); box-shadow: 1px 0 0 var(--border); }
+table.counts thead th:first-child, table.counts tfoot td:first-child { z-index: 3; background: var(--surface-2); }
+/* 対応担当者 */
+.assignee-cell { min-width: 110px; }
+button.assignee { background: none; border: 1px dashed transparent; padding: 1px 6px; margin: 0; text-align: left; font: inherit; font-weight: 400; color: inherit; white-space: nowrap; }
+button.assignee:hover { border-color: var(--primary); }
+button.assignee.empty { color: var(--muted); opacity: .6; }
+.assignee-input { width: 140px; padding: 2px 6px; font-size: 12px; }
 
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
 .two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
@@ -133,7 +154,7 @@ table.tree tr.tree-other td:first-child .tree-name { color: var(--muted); font-s
 .tree-kind { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); }
 .user-cell { font-weight: 400; }
 .audit-mark { color: var(--muted); font-size: 10px; margin-right: 2px; font-weight: 400; }
-.audit-note { margin-bottom: 12px; font-size: 12px; }
+.audit-note { font-size: 12px; }
 tfoot td { font-weight: 700; background: var(--surface-2); }
 
 .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; margin-left: 4px; white-space: nowrap; }

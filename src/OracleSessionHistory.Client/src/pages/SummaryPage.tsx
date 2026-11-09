@@ -9,14 +9,15 @@ export default function SummaryPage({ targetId }: { targetId?: number }) {
   const { data, error } = useAsync(() => api.summary(targetId), [targetId], 5000)
 
   return (
-    <div className="page">
+    // 接続アプリ表がメイン：ページを画面の高さに収め、表の中だけをスクロールする
+    <div className="page summary-page">
       <div className="page-head">
         <h1>サマリー</h1>
         <span className="muted">5秒ごとに自動更新</span>
       </div>
       {error && <div className="alert error">{error}</div>}
 
-      {/* 接続アプリ表をスクロールせずに見られるよう、サマリーは 1 行の数値と監視対象の状態にまとめ、内訳・ランキングは折りたたむ */}
+      {/* サマリーは 1 行の数値と監視対象の状態にまとめ、内訳・ランキングは折りたたむ */}
       <div className="tiles compact">
         <Tile label="接続数" value={data?.connections} onClick={() => navigate('/sessions', { state: 'connected' })} />
         <Tile label="アプリ数" value={data?.apps} note="接続中のアプリ（IIS プール・exe 等）" onClick={() => document.getElementById('connection-counts')?.scrollIntoView({ behavior: 'smooth' })} />

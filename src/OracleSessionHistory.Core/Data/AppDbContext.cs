@@ -17,6 +17,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ProcessInspectionSettings> ProcessInspectionSettings => Set<ProcessInspectionSettings>();
     public DbSet<AuditLogonCount> AuditLogonCounts => Set<AuditLogonCount>();
     public DbSet<DirectoryUser> DirectoryUsers => Set<DirectoryUser>();
+    public DbSet<AppAssignee> AppAssignees => Set<AppAssignee>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -67,6 +68,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.Account).HasMaxLength(256);
             e.Property(x => x.DisplayName).HasMaxLength(256);
             e.HasIndex(x => x.DisplayName);
+        });
+
+        b.Entity<AppAssignee>(e =>
+        {
+            // SQL Server の主キーの上限（900 バイト）に収まる長さ
+            e.HasKey(x => x.NodeKey);
+            e.Property(x => x.NodeKey).HasMaxLength(AppAssigneeLimits.NodeKeyLength);
+            e.Property(x => x.Assignee).HasMaxLength(AppAssigneeLimits.AssigneeLength);
         });
 
         b.Entity<ProcessInspectionSettings>(e =>

@@ -251,6 +251,10 @@ export interface ConnectionCountNode extends PeriodCounts {
   /** クリックで開くセッション履歴の検索条件 */
   open: Record<string, string> | null
   children: ConnectionCountNode[]
+  /** 行のキー（上の段からの経路。対応担当者の保存に使う） */
+  key: string
+  /** 対応担当者（未設定は null） */
+  assignee: string | null
 }
 
 /** 監視対象ごとの監査証跡の取得状況 */
@@ -383,4 +387,9 @@ export const api = {
   updateProcessSettings: (s: ProcessSettingsInput) => request<ProcessSettings>('PUT', 'api/process-settings', s),
   testProcessSettings: (host: string, settings: ProcessSettingsInput) =>
     request<{ success: boolean; message: string }>('POST', 'api/process-settings/test', { host, settings }),
+  /** 接続アプリ表の対応担当者の入力候補（設定済みの担当者） */
+  assignees: () => request<string[]>('GET', 'api/assignees'),
+  /** 接続アプリ表の行の対応担当者を保存する（空は設定を外す） */
+  saveAssignee: (nodeKey: string, assignee: string) =>
+    request<{ assignee: string | null }>('PUT', 'api/assignees', { nodeKey, assignee }),
 }
