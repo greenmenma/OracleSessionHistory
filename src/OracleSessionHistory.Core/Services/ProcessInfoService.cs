@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using OracleSessionHistory.Core.Data;
@@ -26,6 +27,8 @@ public sealed class ProcessInfoService(
     /// <summary>同時に問い合わせるホスト数</summary>
     private const int MaxParallelHosts = 4;
     private const int MaxErrorLength = 500;
+    /// <summary>画面に出す文言の日時を曜日（日本語）付きにするためのカルチャ（OS の言語設定に依存しない）</summary>
+    private static readonly CultureInfo JapaneseCulture = CultureInfo.GetCultureInfo("ja-JP");
 
     private sealed record HostResult(IReadOnlyList<ClientProcessInfo>? Processes, string? Error);
 
@@ -158,7 +161,7 @@ public sealed class ProcessInfoService(
                 else if (ClientProcessRules.IsMismatch(p, w.Row.Program, w.Row.LogonTime))
                 {
                     SetState(w.Row, ProcInfoStates.Mismatch,
-                        $"別のプロセスの可能性があるため紐付けません（{p.Name}、開始 {p.StartedAt:yyyy/MM/dd HH:mm:ss}）", now);
+                        string.Create(JapaneseCulture, $"別のプロセスの可能性があるため紐付けません（{p.Name}、開始 {p.StartedAt:yyyy/MM/dd(ddd) HH:mm:ss}）"), now);
                 }
                 else
                 {

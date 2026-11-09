@@ -5,16 +5,27 @@ export function parseDate(v: string): Date {
   return new Date(v.replace(/(\.\d{3})\d+/, '$1'))
 }
 
+const weekdays = ['日', '月', '火', '水', '木', '金', '土']
+const pad = (n: number) => String(n).padStart(2, '0')
+
+/** 日付と曜日（例：2026/11/09(月)） */
+function dayLabel(d: Date): string {
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}(${weekdays[d.getDay()]})`
+}
+
+/** 日時（例：2026/11/09(月) 12:34:56） */
 export function fmtDateTime(v: string | null | undefined): string {
   if (!v) return ''
   const d = parseDate(v)
   if (Number.isNaN(d.getTime())) return v
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  return `${dayLabel(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+/** 日付（例：2026/11/09(月)） */
 export function fmtDate(v: string | null | undefined): string {
-  return fmtDateTime(v).slice(0, 10)
+  if (!v) return ''
+  const d = parseDate(v)
+  return Number.isNaN(d.getTime()) ? v : dayLabel(d)
 }
 
 /** 経過時間（例：2時間15分） */
