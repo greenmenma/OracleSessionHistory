@@ -17,6 +17,25 @@ namespace OracleSessionHistory.Migrations.Sqlite.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
 
+            modelBuilder.Entity("OracleSessionHistory.Core.Entities.AppAssignee", b =>
+                {
+                    b.Property<string>("NodeKey")
+                        .HasMaxLength(450)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Assignee")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("NodeKey");
+
+                    b.ToTable("AppAssignees");
+                });
+
             modelBuilder.Entity("OracleSessionHistory.Core.Entities.AuditLogonCount", b =>
                 {
                     b.Property<long>("Id")
