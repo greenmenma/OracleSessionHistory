@@ -251,11 +251,26 @@ export interface ConnectionCountNode extends PeriodCounts {
   /** クリックで開くセッション履歴の検索条件 */
   open: Record<string, string> | null
   children: ConnectionCountNode[]
-  /** 行のキー（上の段からの経路。対応担当者の保存に使う） */
+  /** 行のキー（上の段からの経路。日本語名・メモ・対応担当者の保存に使う） */
   key: string
-  /** 対応担当者（未設定は null） */
-  assignee: string | null
+  /** 画面から設定した日本語名・メモ・対応担当者（未設定は null） */
+  note: NodeNote | null
 }
+
+/** 接続アプリ表の行に設定する情報 */
+export interface NodeNote {
+  /** 日本語の名前 */
+  displayName: string | null
+  /** メモ（このアプリは何か等） */
+  memo: string | null
+  /** メインの対応担当者 */
+  mainAssignee: string | null
+  /** サブの対応担当者 */
+  subAssignees: string[]
+}
+
+/** 担当者での絞り込みで、担当者が決まっていない行を表す値（Server の ConnectionTreeKeys.Unassigned） */
+export const UNASSIGNED = '(未設定)'
 
 /** 監視対象ごとの監査証跡の取得状況 */
 export interface AuditCoverage {
@@ -369,8 +384,9 @@ export const api = {
   session: (id: number) => request<SessionDetail>('GET', `api/sessions/${id}`),
   /** 実行ユーザの表示名（アカウントを大文字にした値 → AD の displayName） */
   userNames: () => request<Record<string, string>>('GET', 'api/user-names'),
-  connectionCounts: (targetId?: number, q?: string) =>
-    request<ConnectionCounts>('GET', `api/connection-counts${qs({ targetId, q })}`),
+  /** assignee：担当者で絞り込む（UNASSIGNED は担当者が決まっていない行） */
+  connectionCounts: (targetId?: number, q?: string, assignee?: string) =>
+    request<ConnectionCounts>('GET', `api/connection-counts${qs({ targetId, q, assignee })}`),
 
   linkSources: (targetId: number) => request<LinkSource[]>('GET', `api/targets/${targetId}/link-sources`),
   createLinkSource: (targetId: number, l: LinkSourceInput) =>
@@ -387,9 +403,9 @@ export const api = {
   updateProcessSettings: (s: ProcessSettingsInput) => request<ProcessSettings>('PUT', 'api/process-settings', s),
   testProcessSettings: (host: string, settings: ProcessSettingsInput) =>
     request<{ success: boolean; message: string }>('POST', 'api/process-settings/test', { host, settings }),
-  /** 接続アプリ表の対応担当者の入力候補（設定済みの担当者） */
+  /** 接続アプリ表の担当者の絞り込み・入力の候補（設定済みのメイン・サブの担当者） */
   assignees: () => request<string[]>('GET', 'api/assignees'),
-  /** 接続アプリ表の行の対応担当者を保存する（空は設定を外す） */
-  saveAssignee: (nodeKey: string, assignee: string) =>
-    request<{ assignee: string | null }>('PUT', 'api/assignees', { nodeKey, assignee }),
+  /** 接続アプリ表の行の日本語名・メモ・対応担当者を保存する（すべて空なら設定を外す） */
+  saveNodeNote: (nodeKey: string, note: NodeNote) =>
+    request<{ note: NodeNote | null }>('PUT', 'api/node-notes', { nodeKey, ...note }),
 }
