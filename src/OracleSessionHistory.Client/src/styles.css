@@ -92,6 +92,10 @@ table.counts thead th { z-index: 2; }
 table.counts tfoot td { position: sticky; bottom: 0; z-index: 2; box-shadow: 0 -1px 0 var(--border); }
 table.counts th:first-child, table.counts td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); box-shadow: 1px 0 0 var(--border); }
 table.counts thead th:first-child, table.counts tfoot td:first-child { z-index: 3; background: var(--surface-2); }
+/* セッション履歴の列は右端に固定する（横にスクロールしても「履歴 →」を押せる） */
+table.counts .sticky-right { position: sticky; right: 0; z-index: 1; background: var(--surface); box-shadow: -1px 0 0 var(--border); }
+table.counts thead th.sticky-right, table.counts tfoot td.sticky-right { z-index: 3; background: var(--surface-2); }
+table.tree tr.tree-machine.depth-0 td.sticky-right { background: var(--surface-2); }
 /* 行の情報（日本語名・メモ・対応担当者） */
 .tree-display-name { font-weight: 700; margin-right: 6px; }
 .tree-name.sub-name { color: var(--muted); font-size: 12px; font-weight: 400; }

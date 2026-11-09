@@ -134,7 +134,7 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
             </td>
           )
         })}
-        <td className="nowrap sep">
+        <td className="nowrap sep sticky-right">
           {n.open && (
             <button type="button" className="small" onClick={() => navigate('/sessions', n.open!)} title="この行のセッション履歴を表示">
               履歴 →
@@ -216,7 +216,7 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
                     )}
                   </th>
                 ))}
-                <th className="sep">セッション履歴</th>
+                <th className="sep sticky-right">セッション履歴</th>
               </tr>
             </thead>
             <tbody>
@@ -240,7 +240,7 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
                       {t.toLocaleString()}
                     </td>
                   ))}
-                  <td className="sep" />
+                  <td className="sep sticky-right" />
                 </tr>
               </tfoot>
             )}
