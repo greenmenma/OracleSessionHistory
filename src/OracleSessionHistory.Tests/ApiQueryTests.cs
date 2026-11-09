@@ -383,6 +383,39 @@ public sealed class ApiQueryTests : IDisposable
     }
 
     [Fact]
+    public async Task すべてを表示する場合はセッションとDB_Link利用元をログオン順に並べてページを切り出す()
+    {
+        var l = new LinkSource { TargetId = _targetId, Name = "基幹DB", ConnectionString = "y" };
+        _db.LinkSources.Add(l);
+        _db.SaveChanges();
+        // セッション 9:00・11:00、DB Link 利用元 10:00・12:00
+        Add(ProcessKinds.Client, logon: Today.AddHours(9));
+        Add(ProcessKinds.Client, logon: Today.AddHours(11));
+        foreach (var (sid, h) in new[] { (1, 10), (2, 12) })
+            _db.DbLinkUsages.Add(new DbLinkUsage
+            {
+                LinkSourceId = l.Id, TargetId = _targetId, DbLinkName = "TO_DB01", InstId = 1, Sid = sid, Serial = 1,
+                LogonTime = Today.AddHours(h), Machine = "AP01", AppName = "x", FirstSeenAt = Today.AddHours(h), LastSeenAt = Today.AddHours(h),
+            });
+        _db.SaveChanges();
+
+        async Task<List<(string, int)>> Page(int page, string? source) =>
+            (await SessionEndpoints.QueryRowsAsync(_db, new SessionSearch(null, null, null, null, null, null, null, null, null, null,
+                Page: page, PageSize: 3, Source: source))).Items.Select(r => (r.Type, r.LogonTime.Hour)).ToList();
+
+        Assert.Equal([("dblink", 12), ("session", 11), ("dblink", 10)], await Page(1, SessionEndpoints.AllSource));
+        Assert.Equal([("session", 9)], await Page(2, SessionEndpoints.AllSource));
+        Assert.Equal(4, (await SessionEndpoints.QueryRowsAsync(_db, new SessionSearch(null, null, null, null, null, null, null, null, null, null,
+            Source: SessionEndpoints.AllSource))).Total);
+        Assert.Equal([("dblink", 12), ("dblink", 10)], await Page(1, SessionEndpoints.DbLinkSource));
+        Assert.Equal([("session", 11), ("session", 9)], await Page(1, null));
+        var usage = (await SessionEndpoints.QueryRowsAsync(_db, new SessionSearch(null, null, null, null, null, null, null, null, null, null,
+            Source: SessionEndpoints.DbLinkSource))).Items[0];
+        Assert.Equal("T", usage.TargetName);
+        Assert.Equal("基幹DB", usage.Usage!.LinkSourceName);
+    }
+
+    [Fact]
     public void すべてを表示する場合はセッションだけの条件でDB_Link利用元を除く()
     {
         Assert.False(SessionEndpoints.HasSessionOnlyCondition(new SessionSearch(null, null, "x", "AP01", null, "u", "o", null, null, null, App: "a", Exact: true)));
@@ -440,6 +473,17 @@ public class ApiQuerySqlServerTests
             AppDbProviders.SqlServer, "Server=localhost;Database=x;Integrated Security=true;TrustServerCertificate=true").Options);
         var sql = SessionEndpoints.Project(db.Sessions).ToQueryString();
         Assert.Contains("[LinkOriginApp]", sql);
+    }
+
+    [Fact]
+    public void セッションとDB_Link利用元をまとめた並べ替えはSqlServerでも変換できる()
+    {
+        using var db = new AppDbContext((DbContextOptions<AppDbContext>)AppDatabase.Configure(new DbContextOptionsBuilder<AppDbContext>(),
+            AppDbProviders.SqlServer, "Server=localhost;Database=x;Integrated Security=true;TrustServerCertificate=true").Options);
+        var s = new SessionSearch(1, null, "foo", null, null, null, "山田", null, null, null);
+        var sql = SessionEndpoints.KeyQuery(db, s, withSessions: true, withUsages: true)
+            .OrderByDescending(k => k.LogonTime).ThenBy(k => k.Order).ThenByDescending(k => k.Id).Skip(50).Take(50).ToQueryString();
+        Assert.Contains("UNION ALL", sql);
     }
 
     [Fact]

@@ -86,11 +86,21 @@ function viaLabel(via: string): string {
   return via === 'direct' ? '直接の接続のみ（DB Link 経由を除く）' : `DB Link 経由（${via}）の接続のみ`
 }
 
-/** DB Link 利用元を表示する場合に効かない条件（監視対象のセッションだけにあるもの） */
+/**
+ * 監視対象のセッションだけにある条件（サーバーの SessionEndpoints.HasSessionOnlyCondition と同じ）。
+ * 実行ファイル（exe）は DB Link 利用元の PROGRAM でも探すため含めない
+ */
+const sessionOnlyTreeKeys = ['host', 'via', 'linkSource', 'origin'] as const
+
+function hasSessionOnlyCondition(f: Filters): boolean {
+  return !!(f.state || f.kind || f.includeInternal || sessionOnlyTreeKeys.some((k) => f[k]))
+}
+
+/** DB Link 利用元を表示する場合に効かない条件の説明 */
 function sessionOnlyLabel(f: Filters): string | undefined {
-  if (f.source === 'dblink') return undefined
-  if (f.source === 'all' && (f.state || f.kind || f.includeInternal || treeKeys.some((k) => f[k])))
-    return '状態・種別・Oracle 内部プロセス・接続アプリの行の条件があるため、DB Link 利用元は表示していません'
+  if (!hasSessionOnlyCondition(f)) return undefined
+  if (f.source === 'dblink') return '状態・種別・Oracle 内部プロセス・接続アプリの行の条件は、DB Link 利用元には効きません'
+  if (f.source === 'all') return '状態・種別・Oracle 内部プロセス・接続アプリの行の条件があるため、DB Link 利用元は表示していません'
   return undefined
 }
 

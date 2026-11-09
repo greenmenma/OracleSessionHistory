@@ -53,46 +53,7 @@ public static class SessionEndpoints
         var g = app.MapGroup("/api");
 
         // セッション履歴。Source により監視対象のセッションと DB Link 利用元を同じ一覧（ログオンが新しい順）で返す
-        g.MapGet("/sessions", async ([AsParameters] SessionSearch s, AppDbContext db) =>
-        {
-            var pageSize = Math.Clamp(s.PageSize, 1, 500);
-            var page = Math.Max(1, s.Page);
-            var skip = (page - 1) * pageSize;
-            var withSessions = s.Source != DbLinkSource;
-            var withUsages = s.Source == DbLinkSource || (s.Source == AllSource && !HasSessionOnlyCondition(s));
-
-            var sq = Filter(db.Sessions.AsNoTracking(), s, db.DirectoryUsers);
-            var uq = FilterUsages(db.DbLinkUsages.AsNoTracking(), s, db.DirectoryUsers);
-            var sessionTotal = withSessions ? await sq.CountAsync() : 0;
-            var usageTotal = withUsages ? await uq.CountAsync() : 0;
-
-            // 両方を出す場合は、それぞれの先頭から skip + pageSize 件を取り、ログオン順に並べ直してページを切り出す
-            var take = withSessions && withUsages ? skip + pageSize : pageSize;
-            var from = withSessions && withUsages ? 0 : skip;
-            var rows = new List<SessionRow>();
-            if (withSessions)
-            {
-                var items = await Project(sq.OrderByDescending(x => x.LogonTime) // 最新のログオンを上位に
-                        .ThenByDescending(x => x.Id).Skip(from).Take(take))
-                    .ToListAsync();
-                rows.AddRange(items.Select(x => new SessionRow("session", x.TargetName, x.LogonTime, x, null)));
-            }
-            if (withUsages)
-            {
-                var targetNames = await db.Targets.AsNoTracking().ToDictionaryAsync(t => t.Id, t => t.Name);
-                var items = await uq.OrderByDescending(u => u.LogonTime).ThenByDescending(u => u.Id).Skip(from).Take(take)
-                    .Select(u => new { u.TargetId, Dto = DbLinkUsageDto.From(u, u.LinkSource!.Name) })
-                    .ToListAsync();
-                rows.AddRange(items.Select(x => new SessionRow("dblink", targetNames.GetValueOrDefault(x.TargetId, ""), x.Dto.LogonTime, null, x.Dto)));
-            }
-            if (withSessions && withUsages)
-            {
-                rows = rows.OrderByDescending(r => r.LogonTime).ThenBy(r => r.Type)
-                    .ThenByDescending(r => r.Session?.Id ?? r.Usage!.Id)
-                    .Skip(skip).Take(pageSize).ToList();
-            }
-            return new PagedResult<SessionRow>(rows, sessionTotal + usageTotal, page, pageSize);
-        });
+        g.MapGet("/sessions", ([AsParameters] SessionSearch s, AppDbContext db) => QueryRowsAsync(db, s));
 
         // 実行ユーザの表示名（AD の displayName）。画面はアカウントの代わりに表示名を出す（キーはアカウントを大文字にした値）
         g.MapGet("/user-names", async (AppDbContext db, CancellationToken ct) =>
@@ -128,6 +89,62 @@ public static class SessionEndpoints
             var hasLinkSource = await db.LinkSources.AnyAsync(l => l.TargetId == s.TargetId);
             return Results.Ok(new { session = s, targetName, origins, candidates, hasLinkSource });
         });
+    }
+
+    /// <summary>一覧の並び順を決めるためのキー（Order はログオンが同じ場合の並び：DB Link 利用元 0 → セッション 1）</summary>
+    /// <remarks>UNION ALL に変換できるよう、コンストラクタではなくプロパティの初期化で作る</remarks>
+    internal sealed class RowKey
+    {
+        public DateTime LogonTime { get; init; }
+        public int Order { get; init; }
+        public long Id { get; init; }
+    }
+
+    /// <summary>条件に合う行のキー。両方を出す場合はセッションと DB Link 利用元を UNION ALL でまとめる</summary>
+    internal static IQueryable<RowKey> KeyQuery(AppDbContext db, SessionSearch s, bool withSessions, bool withUsages)
+    {
+        var sessionKeys = Filter(db.Sessions.AsNoTracking(), s, db.DirectoryUsers).Select(x => new RowKey { LogonTime = x.LogonTime, Order = 1, Id = x.Id });
+        var usageKeys = FilterUsages(db.DbLinkUsages.AsNoTracking(), s, db.DirectoryUsers).Select(u => new RowKey { LogonTime = u.LogonTime, Order = 0, Id = u.Id });
+        return withSessions && withUsages ? sessionKeys.Concat(usageKeys) : withSessions ? sessionKeys : usageKeys;
+    }
+
+    /// <summary>
+    /// セッション履歴の 1 ページ。Source により監視対象のセッションと DB Link 利用元を同じ一覧（ログオンが新しい順）で返す。
+    /// 両方を出す場合も並べ替え・ページの切り出しは DB で行い（UNION ALL）、ページに入った行だけを読み込む
+    /// </summary>
+    internal static async Task<PagedResult<SessionRow>> QueryRowsAsync(AppDbContext db, SessionSearch s)
+    {
+        var pageSize = Math.Clamp(s.PageSize, 1, 500);
+        var page = Math.Max(1, s.Page);
+        var withSessions = s.Source != DbLinkSource;
+        var withUsages = s.Source == DbLinkSource || (s.Source == AllSource && !HasSessionOnlyCondition(s));
+
+        var keyQuery = KeyQuery(db, s, withSessions, withUsages);
+
+        var total = await keyQuery.CountAsync();
+        var keys = await keyQuery
+            .OrderByDescending(k => k.LogonTime) // 最新のログオンを上位に
+            .ThenBy(k => k.Order).ThenByDescending(k => k.Id)
+            .Skip((page - 1) * pageSize).Take(pageSize)
+            .ToListAsync();
+
+        var sessionIds = keys.Where(k => k.Order == 1).Select(k => k.Id).ToList();
+        var usageIds = keys.Where(k => k.Order == 0).Select(k => k.Id).ToList();
+        var sessions = sessionIds.Count == 0 ? new Dictionary<long, SessionListItem>()
+            : await Project(db.Sessions.AsNoTracking().Where(x => sessionIds.Contains(x.Id))).ToDictionaryAsync(x => x.Id);
+        var usages = usageIds.Count == 0 ? new Dictionary<long, SessionRow>()
+            : await db.DbLinkUsages.AsNoTracking().Where(u => usageIds.Contains(u.Id))
+                .Select(u => new SessionRow("dblink", db.Targets.Where(t => t.Id == u.TargetId).Select(t => t.Name).FirstOrDefault() ?? "", u.LogonTime, null, DbLinkUsageDto.From(u, u.LinkSource!.Name)))
+                .ToDictionaryAsync(r => r.Usage!.Id);
+
+        // キーの順に並べる（キーの取得後に削除された行は除く）
+        var rows = new List<SessionRow>(keys.Count);
+        foreach (var k in keys)
+        {
+            if (k.Order == 1 && sessions.TryGetValue(k.Id, out var x)) rows.Add(new SessionRow("session", x.TargetName, x.LogonTime, x, null));
+            else if (k.Order == 0 && usages.TryGetValue(k.Id, out var r)) rows.Add(r);
+        }
+        return new PagedResult<SessionRow>(rows, total, page, pageSize);
     }
 
     /// <summary>
