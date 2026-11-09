@@ -1,5 +1,5 @@
-import { Fragment, useState } from 'react'
-import { api, type ConnectionCountNode, type PeriodCounts } from '../api'
+import { Fragment, useEffect, useState } from 'react'
+import { api, UNASSIGNED, type ConnectionCountNode, type NodeNote, type PeriodCounts } from '../api'
 import { useAsync } from '../hooks'
 import { fmtDate, fmtDateTime } from '../format'
 import { navigate } from '../router'
@@ -19,43 +19,40 @@ const columns: { key: CountKey; label: string; period: string }[] = [
   { key: 'month2', label: '1ヶ月〜2ヶ月', period: 'month2Start' },
 ]
 
+/** 先頭（実行端末 / アプリ・担当者・実行ユーザ・接続中・最終確認）と末尾（セッション履歴）の列数 */
+const leadColumns = 5
+const columnCount = leadColumns + columns.length + 1
+
 const auditTitle = 'DBA_AUDIT_SESSION（監査証跡）のログオン件数を含みます（このシステムの履歴がまだ無い期間）'
+
+const description =
+  '実行端末 → 実行ファイル → IIS のプール・sqlplus の実行元の順に、ログオン回数（取得できたセッション数）を表示します。' +
+  'DB Link 経由の接続は、DB サーバーの ORACLE.EXE の下に DB Link 接続元 → 接続元の端末 → 接続元のアプリで表示します。' +
+  'Oracle 内部プロセス（ジョブ等）は含みません。✎ または担当者の欄をクリックすると、日本語名・メモ・担当者（メイン・サブ）を設定できます'
 
 /** 下の段の無い行（日別の列に件数の背景色を付ける） */
 function leaves(nodes: ConnectionCountNode[]): ConnectionCountNode[] {
   return nodes.flatMap((n) => (n.children.length === 0 && n.kind !== 'machine' ? [n] : leaves(n.children)))
 }
 
-const description =
-  '実行端末 → 実行ファイル → IIS のプール・sqlplus の実行元の順に、ログオン回数（取得できたセッション数）を表示します。' +
-  'DB Link 経由の接続は、DB サーバーの ORACLE.EXE の下に DB Link 接続元 → 接続元の端末 → 接続元のアプリで表示します。' +
-  'Oracle 内部プロセス（ジョブ等）は含みません。担当者の欄をクリックすると対応担当者を設定できます'
-
 /** 接続アプリ表（サマリーのメイン。表の中でスクロールし、見出し・合計・スクロールバーは常に見える） */
 export default function ConnectionCountsSection({ targetId }: { targetId?: number }) {
   const [input, setInput] = useState('')
   const [q, setQ] = useState('')
-  const { data, error, loading } = useAsync(() => api.connectionCounts(targetId, q), [targetId, q], 60000)
+  const [assignee, setAssignee] = useState('')
+  const { data, error, loading, reload } = useAsync(
+    () => api.connectionCounts(targetId, q, assignee || undefined),
+    [targetId, q, assignee],
+    60000,
+  )
   const suggestions = useAsync(() => api.assignees(), [], undefined)
-  // 保存した担当者（次の自動更新までの間も画面に反映する）
-  const [saved, setSaved] = useState<Record<string, string | null>>({})
-  const [saveError, setSaveError] = useState<string>()
-
-  const saveAssignee = async (key: string, value: string) => {
-    try {
-      const r = await api.saveAssignee(key, value)
-      setSaved((m) => ({ ...m, [key]: r.assignee }))
-      setSaveError(undefined)
-      void suggestions.reload()
-    } catch (e) {
-      setSaveError(`担当者を保存できませんでした：${e instanceof Error ? e.message : String(e)}`)
-    }
-  }
+  const [editing, setEditing] = useState<ConnectionCountNode>()
 
   const nodes = data?.nodes ?? []
   const totals = columns.map((c) => nodes.reduce((a, n) => a + n[c.key], 0))
   const max = Math.max(1, ...leaves(nodes).flatMap((n) => columns.slice(0, 7).map((c) => n[c.key])))
   const audits = data?.audit ?? []
+  const names = suggestions.data ?? []
 
   /**
    * 1 行と、その下の段を再帰的に描く。
@@ -74,29 +71,37 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
             )}
             <div className="tree-label">
               {n.kind === 'dblink' && <span className="tree-kind">DB Link</span>}
-              <span className="tree-name" title={n.label}>
+              {n.note?.displayName && <span className="tree-display-name">{n.note.displayName}</span>}
+              <span className={`tree-name ${n.note?.displayName ? 'sub-name' : ''}`} title={n.label}>
                 {n.label}
               </span>
+              <button type="button" className="note-edit" onClick={() => setEditing(n)} title="日本語名・メモ・担当者を設定">
+                ✎
+              </button>
               {n.detail && (
                 <div className="app-detail" title={n.detail}>
                   {n.detail}
                 </div>
               )}
+              {n.note?.memo && (
+                <div className="tree-memo" title={n.note.memo}>
+                  {n.note.memo}
+                </div>
+              )}
             </div>
           </div>
         </td>
-        <td className="nowrap">
-          {n.open && (
-            <button type="button" className="small" onClick={() => navigate('/sessions', n.open!)} title="この行のセッション履歴を表示">
-              履歴 →
-            </button>
-          )}
-        </td>
         <td className="assignee-cell">
-          <AssigneeCell
-            value={n.key in saved ? saved[n.key] : n.assignee}
-            onSave={(v) => saveAssignee(n.key, v)}
-          />
+          <button type="button" className={`assignee ${n.note?.mainAssignee || n.note?.subAssignees.length ? '' : 'empty'}`} onClick={() => setEditing(n)} title="クリックして担当者を設定">
+            {n.note?.mainAssignee || n.note?.subAssignees.length ? (
+              <>
+                {n.note.mainAssignee && <span className="assignee-main">{n.note.mainAssignee}</span>}
+                {n.note.subAssignees.length > 0 && <span className="assignee-sub">サブ {n.note.subAssignees.join('、')}</span>}
+              </>
+            ) : (
+              '＋'
+            )}
+          </button>
         </td>
         <td className="nowrap">
           <UserList accounts={n.owners} />
@@ -120,6 +125,13 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
             </td>
           )
         })}
+        <td className="nowrap sep">
+          {n.open && (
+            <button type="button" className="small" onClick={() => navigate('/sessions', n.open!)} title="この行のセッション履歴を表示">
+              履歴 →
+            </button>
+          )}
+        </td>
       </tr>
       {n.children.map((c, i) => renderNode(c, [...guides, !last], i === n.children.length - 1))}
     </Fragment>
@@ -139,6 +151,15 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
             setQ(input)
           }}
         >
+          <select value={assignee} onChange={(e) => setAssignee(e.target.value)} title="担当者（メイン・サブ）で絞り込み">
+            <option value="">担当者：すべて</option>
+            {names.map((a) => (
+              <option key={a} value={a}>
+                {a}
+              </option>
+            ))}
+            <option value={UNASSIGNED}>担当者：未設定</option>
+          </select>
           <input placeholder="実行端末・アプリ・プール名・実行ファイル・DB Link 接続元で絞り込み" value={input} onChange={(e) => setInput(e.target.value)} />
           <button type="submit" className="primary">
             絞り込み
@@ -146,7 +167,6 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
         </form>
       </div>
       {error && <div className="alert error">{error}</div>}
-      {saveError && <div className="alert error">{saveError}</div>}
       {audits.length > 0 && (
         <div className="audit-note muted">
           <span className="audit-mark">※</span> の件数は、このシステムの履歴がまだ無い期間を DBA_AUDIT_SESSION（監査証跡）のログオン件数で補っています（端末の行のみ）。
@@ -159,21 +179,22 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
           ))}
         </div>
       )}
-      <datalist id="assignee-suggestions">
-        {suggestions.data?.map((a) => (
-          <option key={a} value={a} />
-        ))}
-      </datalist>
       <section className="card counts-card">
         <div className="table-head">
-          <span>{data ? `${nodes.length} 端末` : loading ? '読み込み中…' : ''}</span>
+          <span>
+            {data ? `${nodes.length} 端末` : loading ? '読み込み中…' : ''}
+            {assignee && (
+              <span className="muted">
+                （担当者 {assignee === UNASSIGNED ? '未設定' : assignee} の行と、その上の段。合計は表示している端末の件数）
+              </span>
+            )}
+          </span>
         </div>
         <div className="table-wrap">
           <table className="counts tree">
             <thead>
               <tr>
                 <th>実行端末 / アプリ</th>
-                <th>セッション履歴</th>
                 <th>担当者</th>
                 <th>実行ユーザ</th>
                 <th className="num">接続中</th>
@@ -186,13 +207,14 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
                     )}
                   </th>
                 ))}
+                <th className="sep">セッション履歴</th>
               </tr>
             </thead>
             <tbody>
               {nodes.map((n, i) => renderNode(n, [], i === nodes.length - 1))}
               {data && nodes.length === 0 && (
                 <tr>
-                  <td colSpan={15} className="empty">
+                  <td colSpan={columnCount} className="empty">
                     データがありません
                   </td>
                 </tr>
@@ -201,7 +223,7 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
             {nodes.length > 0 && (
               <tfoot>
                 <tr>
-                  <td colSpan={4}>合計</td>
+                  <td colSpan={3}>合計</td>
                   <td className="num">{nodes.reduce((a, n) => a + n.connected, 0).toLocaleString()}</td>
                   <td />
                   {totals.map((t, i) => (
@@ -209,61 +231,128 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
                       {t.toLocaleString()}
                     </td>
                   ))}
+                  <td className="sep" />
                 </tr>
               </tfoot>
             )}
           </table>
         </div>
       </section>
+
+      <datalist id="assignee-suggestions">
+        {names.map((a) => (
+          <option key={a} value={a} />
+        ))}
+      </datalist>
+      {editing && (
+        <NodeNoteEditor
+          node={editing}
+          onClose={() => setEditing(undefined)}
+          onSaved={() => {
+            setEditing(undefined)
+            void reload()
+            void suggestions.reload()
+          }}
+        />
+      )}
     </div>
   )
 }
 
-/** 対応担当者の欄。クリックで入力し、Enter・フォーカスを外すと保存、Esc で取り消す（空にすると外す） */
-function AssigneeCell({ value, onSave }: { value: string | null; onSave: (v: string) => Promise<void> }) {
-  const [editing, setEditing] = useState(false)
-  const [text, setText] = useState('')
+const emptyNote: NodeNote = { displayName: null, memo: null, mainAssignee: null, subAssignees: [] }
+
+/** 行の日本語名・メモ・担当者（メイン 1 人・サブ複数）の編集。すべて空にして保存すると設定を外す */
+function NodeNoteEditor({ node, onClose, onSaved }: { node: ConnectionCountNode; onClose: () => void; onSaved: () => void }) {
+  const initial = node.note ?? emptyNote
+  const [displayName, setDisplayName] = useState(initial.displayName ?? '')
+  const [memo, setMemo] = useState(initial.memo ?? '')
+  const [main, setMain] = useState(initial.mainAssignee ?? '')
+  // サブは入力欄を 1 つ以上出す（最後の欄に入力すると次の欄を足す）
+  const [subs, setSubs] = useState<string[]>([...initial.subAssignees, ''])
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string>()
 
-  const start = () => {
-    setText(value ?? '')
-    setEditing(true)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const setSub = (i: number, v: string) => {
+    const next = subs.map((s, j) => (j === i ? v : s))
+    if (i === next.length - 1 && v.trim() && next.length < 10) next.push('')
+    setSubs(next)
   }
-  const commit = async () => {
-    if (!editing || saving) return
-    if (text.trim() === (value ?? '')) {
-      setEditing(false)
-      return
-    }
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault()
     setSaving(true)
-    await onSave(text)
-    setSaving(false)
-    setEditing(false)
+    try {
+      await api.saveNodeNote(node.key, {
+        displayName: displayName.trim() || null,
+        memo: memo.trim() || null,
+        mainAssignee: main.trim() || null,
+        subAssignees: subs.map((s) => s.trim()).filter(Boolean),
+      })
+      onSaved()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      setSaving(false)
+    }
   }
 
-  if (editing)
-    return (
-      <input
-        className="assignee-input"
-        autoFocus
-        list="assignee-suggestions"
-        maxLength={100}
-        value={text}
-        disabled={saving}
-        placeholder="担当者（空で解除）"
-        onChange={(e) => setText(e.target.value)}
-        onBlur={() => void commit()}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault()
-            void commit()
-          } else if (e.key === 'Escape') setEditing(false)
-        }}
-      />
-    )
   return (
-    <button type="button" className={`assignee ${value ? '' : 'empty'}`} onClick={start} title="クリックして対応担当者を設定">
-      {value ?? '＋'}
-    </button>
+    <div className="modal-backdrop" onClick={onClose}>
+      <form className="modal" onSubmit={save} onClick={(e) => e.stopPropagation()}>
+        <h2>行の情報</h2>
+        <div className="muted node-path">{node.key.split('\n').map((p) => p.replace(/^[a-z]+:/, '')).join(' → ')}</div>
+        {error && <div className="alert error">{error}</div>}
+        <label>
+          日本語名
+          <input autoFocus maxLength={100} value={displayName} placeholder="例：受注管理システム" onChange={(e) => setDisplayName(e.target.value)} />
+        </label>
+        <label>
+          メモ
+          <textarea
+            className="memo-input"
+            rows={3}
+            maxLength={1000}
+            value={memo}
+            placeholder="例：営業部の受注入力画面。問い合わせは情報システム課"
+            onChange={(e) => setMemo(e.target.value)}
+          />
+        </label>
+        <div className="row">
+          <label>
+            担当者（メイン）
+            <input list="assignee-suggestions" maxLength={100} value={main} onChange={(e) => setMain(e.target.value)} />
+          </label>
+          <div className="field">
+            担当者（サブ・複数可）
+            <div className="sub-assignees">
+              {subs.map((s, i) => (
+                <div key={i} className="sub-assignee">
+                  <input list="assignee-suggestions" maxLength={100} value={s} onChange={(e) => setSub(i, e.target.value)} />
+                  {s && (
+                    <button type="button" className="small" onClick={() => setSubs(subs.filter((_, j) => j !== i))} title="このサブ担当者を外す">
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="muted">すべて空にして保存すると、この行の設定を外します。</div>
+        <div className="actions">
+          <button type="submit" className="primary" disabled={saving}>
+            保存
+          </button>
+          <button type="button" onClick={onClose}>
+            キャンセル
+          </button>
+        </div>
+      </form>
+    </div>
   )
 }

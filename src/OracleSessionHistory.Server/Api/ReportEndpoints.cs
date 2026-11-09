@@ -26,12 +26,12 @@ public sealed record NameCount(string Name, int Count);
 /// <param name="Open">クリックで開くセッション履歴の検索条件（null は開かない）</param>
 /// <param name="Owners">実行ユーザ（ログオンの多い順。DB Link 経由は接続元の実行ユーザ）</param>
 /// <param name="Key">行のキー（対応担当者の保存に使う。<see cref="ConnectionTreeKeys"/>）</param>
-/// <param name="Assignee">対応担当者（未設定は null）</param>
+/// <param name="Note">画面から設定した日本語名・メモ・対応担当者（未設定は null）</param>
 public sealed record ConnectionCountNode(
     string Kind, string Label, string? Detail, IReadOnlyList<string> Owners, int Connected, DateTime? LastSeenAt,
     int Today, int D1, int D2, int D3, int D4, int D5, int D6, int Month1, int Month2,
     IReadOnlyList<string> AuditPeriods, IReadOnlyDictionary<string, string>? Open, IReadOnlyList<ConnectionCountNode> Children,
-    string Key = "", string? Assignee = null);
+    string Key = "", NodeNoteDto? Note = null);
 
 /// <summary>監視対象ごとの監査証跡の取得状況（接続アプリ表の注記用）。From〜LastDay（両端を含む）を監査の件数で補う</summary>
 public sealed record AuditCoverage(string TargetName, DateTime? From, DateTime? LastDay, DateTime? FetchedAt, string? Error);
@@ -100,12 +100,13 @@ public static class ReportEndpoints
         });
 
         // 接続アプリ表：実行端末 × アプリごとの日単位の接続回数（ログオン時刻で集計）
-        g.MapGet("/connection-counts", async (int? targetId, string? q, AppDbContext db, CancellationToken ct) =>
+        // assignee：担当者で絞り込む（ConnectionTreeKeys.Unassigned は担当者が決まっていない行）
+        g.MapGet("/connection-counts", async (int? targetId, string? q, string? assignee, AppDbContext db, CancellationToken ct) =>
         {
             var b = Buckets.Create(DateTime.Today);
             var (tree, audit) = await QueryConnectionTreeAsync(db, targetId, q, b.Today, ct);
-            var assignees = await db.AppAssignees.AsNoTracking().ToDictionaryAsync(a => a.NodeKey, a => a.Assignee, ct);
-            var nodes = ConnectionTreeKeys.Apply(tree, assignees);
+            var notes = (await db.AppNodeNotes.AsNoTracking().ToListAsync(ct)).ToDictionary(n => n.NodeKey, NodeNoteDto.From);
+            var nodes = ConnectionTreeKeys.FilterByAssignee(ConnectionTreeKeys.Apply(tree, notes), assignee);
             return new
             {
                 periods = new

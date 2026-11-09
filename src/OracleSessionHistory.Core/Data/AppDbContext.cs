@@ -17,7 +17,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ProcessInspectionSettings> ProcessInspectionSettings => Set<ProcessInspectionSettings>();
     public DbSet<AuditLogonCount> AuditLogonCounts => Set<AuditLogonCount>();
     public DbSet<DirectoryUser> DirectoryUsers => Set<DirectoryUser>();
-    public DbSet<AppAssignee> AppAssignees => Set<AppAssignee>();
+    public DbSet<AppNodeNote> AppNodeNotes => Set<AppNodeNote>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -70,12 +70,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => x.DisplayName);
         });
 
-        b.Entity<AppAssignee>(e =>
+        b.Entity<AppNodeNote>(e =>
         {
             // SQL Server の主キーの上限（900 バイト）に収まる長さ
             e.HasKey(x => x.NodeKey);
-            e.Property(x => x.NodeKey).HasMaxLength(AppAssigneeLimits.NodeKeyLength);
-            e.Property(x => x.Assignee).HasMaxLength(AppAssigneeLimits.AssigneeLength);
+            e.Property(x => x.NodeKey).HasMaxLength(AppNodeNoteLimits.NodeKeyLength);
+            e.Property(x => x.DisplayName).HasMaxLength(AppNodeNoteLimits.DisplayNameLength);
+            e.Property(x => x.Memo).HasMaxLength(AppNodeNoteLimits.MemoLength);
+            e.Property(x => x.MainAssignee).HasMaxLength(AppNodeNoteLimits.AssigneeLength);
+            e.Property(x => x.SubAssignees).HasMaxLength(AppNodeNoteLimits.SubAssigneesLength);
+            e.Ignore(x => x.SubAssigneeList);
         });
 
         b.Entity<ProcessInspectionSettings>(e =>
