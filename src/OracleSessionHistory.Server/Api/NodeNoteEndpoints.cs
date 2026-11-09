@@ -2,22 +2,34 @@ using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using OracleSessionHistory.Core.Data;
 using OracleSessionHistory.Core.Entities;
+using OracleSessionHistory.Core.Users;
 
 namespace OracleSessionHistory.Server.Api;
 
+/// <summary>対応担当者（AD から選んだ人）</summary>
+/// <param name="Account">AD のアカウント（userPrincipalName、無ければ sAMAccountName）</param>
+/// <param name="DisplayName">選んだ時点の AD の表示名</param>
+public sealed record AssigneeDto(string Account, string DisplayName);
+
 /// <summary>接続アプリ表の行に設定した情報（画面に返す形）</summary>
-public sealed record NodeNoteDto(string? DisplayName, string? Memo, string? MainAssignee, IReadOnlyList<string> SubAssignees)
+public sealed record NodeNoteDto(string? DisplayName, string? Memo, AssigneeDto? MainAssignee, IReadOnlyList<AssigneeDto> SubAssignees)
 {
-    public static NodeNoteDto From(AppNodeNote n) => new(n.DisplayName, n.Memo, n.MainAssignee, n.SubAssigneeList);
+    public static NodeNoteDto From(AppNodeNote n)
+    {
+        var main = n.Assignees.FirstOrDefault(a => a.IsMain);
+        return new(n.DisplayName, n.Memo, main is null ? null : new(main.Account, main.DisplayName),
+            n.Assignees.Where(a => !a.IsMain).OrderBy(a => a.SortOrder).Select(a => new AssigneeDto(a.Account, a.DisplayName)).ToList());
+    }
 
     /// <summary>メイン・サブの担当者すべて（画面には返さない）</summary>
     [JsonIgnore]
-    public IEnumerable<string> Assignees => MainAssignee is null ? SubAssignees : [MainAssignee, .. SubAssignees];
+    public IEnumerable<AssigneeDto> Assignees => MainAssignee is null ? SubAssignees : [MainAssignee, .. SubAssignees];
 }
 
 /// <param name="NodeKey">接続アプリ表の行のキー（<see cref="ConnectionCountNode.Key"/>）</param>
-/// <param name="SubAssignees">サブの担当者（空の名前・重複・メインと同じ名前は除く）</param>
-public sealed record NodeNoteInput(string NodeKey, string? DisplayName, string? Memo, string? MainAssignee, IReadOnlyList<string>? SubAssignees);
+/// <param name="MainAssignee">メインの担当者（AD から選んだ人。null は未設定）</param>
+/// <param name="SubAssignees">サブの担当者（重複・メインと同じ人は除く）</param>
+public sealed record NodeNoteInput(string NodeKey, string? DisplayName, string? Memo, AssigneeDto? MainAssignee, IReadOnlyList<AssigneeDto>? SubAssignees);
 
 /// <summary>接続アプリ表の行のキーと、担当者での絞り込み</summary>
 public static class ConnectionTreeKeys
@@ -42,23 +54,23 @@ public static class ConnectionTreeKeys
         }).ToList();
 
     /// <summary>
-    /// 担当者で絞り込む。担当者の行はその下の段をすべて残し、上の段は経路として残す。
+    /// 担当者（AD のアカウント）で絞り込む。担当者の行はその下の段をすべて残し、上の段は経路として残す。
     /// <see cref="Unassigned"/> は、自分にも上の段にも担当者がいない最下段の行（とその経路）を残す
     /// </summary>
     public static IReadOnlyList<ConnectionCountNode> FilterByAssignee(IReadOnlyList<ConnectionCountNode> nodes, string? assignee)
     {
         if (string.IsNullOrWhiteSpace(assignee)) return nodes;
-        var name = assignee.Trim();
-        return name == Unassigned ? FilterUnassigned(nodes) : FilterNamed(nodes, name);
+        var account = assignee.Trim();
+        return account == Unassigned ? FilterUnassigned(nodes) : FilterAccount(nodes, account);
     }
 
-    private static List<ConnectionCountNode> FilterNamed(IReadOnlyList<ConnectionCountNode> nodes, string name)
+    private static List<ConnectionCountNode> FilterAccount(IReadOnlyList<ConnectionCountNode> nodes, string account)
     {
         var result = new List<ConnectionCountNode>();
         foreach (var n in nodes)
         {
-            if (n.Note?.Assignees.Contains(name, StringComparer.OrdinalIgnoreCase) == true) result.Add(n);
-            else if (FilterNamed(n.Children, name) is { Count: > 0 } children) result.Add(n with { Children = children });
+            if (n.Note?.Assignees.Any(a => string.Equals(a.Account, account, StringComparison.OrdinalIgnoreCase)) == true) result.Add(n);
+            else if (FilterAccount(n.Children, account) is { Count: > 0 } children) result.Add(n with { Children = children });
         }
         return result;
     }
@@ -79,13 +91,32 @@ public static class ConnectionTreeKeys
 /// <summary>接続アプリ表の行の情報（日本語名・メモ・対応担当者）の API</summary>
 public static class NodeNoteEndpoints
 {
+    /// <summary>AD の検索で返す最大件数</summary>
+    private const int MaxSearchResults = 20;
+
     public static void MapNodeNoteEndpoints(this IEndpointRouteBuilder app)
     {
-        // 絞り込み・入力の候補：設定済みの担当者（メイン・サブ。重複なし・名前順）
+        // 担当者を選ぶための AD の検索（名前・アカウント・メールアドレス）
+        app.MapGet("/api/directory/people", async (string? q, IUserDirectory directory, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(q)) return Results.Ok(Array.Empty<DirectoryPerson>());
+            try
+            {
+                return Results.Ok(await directory.SearchAsync(q.Trim(), MaxSearchResults, ct));
+            }
+            catch (UserDirectoryException ex)
+            {
+                // AdUserDirectory が警告ログを出している
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+        });
+
+        // 絞り込みの候補：設定済みの担当者（メイン・サブ。アカウントで重複を除き表示名順）
         app.MapGet("/api/assignees", async (AppDbContext db, CancellationToken ct) =>
-            (await db.AppNodeNotes.AsNoTracking().ToListAsync(ct))
-                .SelectMany(n => NodeNoteDto.From(n).Assignees)
-                .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.CurrentCulture).ToList());
+            (await db.AppNodeAssignees.AsNoTracking().OrderByDescending(a => a.Id).ToListAsync(ct))
+                .DistinctBy(a => a.Account, StringComparer.OrdinalIgnoreCase)
+                .Select(a => new AssigneeDto(a.Account, a.DisplayName))
+                .OrderBy(a => a.DisplayName, StringComparer.CurrentCulture).ToList());
 
         app.MapPut("/api/node-notes", async (NodeNoteInput input, AppDbContext db, CancellationToken ct) =>
         {
@@ -97,12 +128,14 @@ public static class NodeNoteEndpoints
 
     private static string? Clean(string? v) => string.IsNullOrWhiteSpace(v) ? null : v.Trim();
 
-    /// <summary>サブの担当者を整える（空・重複・メインと同じ名前を除く。改行は名前に含めない）</summary>
-    internal static List<string> CleanSubs(IReadOnlyList<string>? subs, string? main) =>
-        (subs ?? []).Select(s => Clean(s?.Replace("\r", " ").Replace("\n", " ")))
-            .OfType<string>()
-            .Where(s => !string.Equals(s, main, StringComparison.OrdinalIgnoreCase))
-            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    private static AssigneeDto? Clean(AssigneeDto? a) =>
+        Clean(a?.Account) is { } account ? new AssigneeDto(account, Clean(a!.DisplayName) ?? account) : null;
+
+    /// <summary>サブの担当者を整える（アカウントの無いもの・重複・メインと同じ人を除く）</summary>
+    internal static List<AssigneeDto> CleanSubs(IReadOnlyList<AssigneeDto>? subs, AssigneeDto? main) =>
+        (subs ?? []).Select(Clean).OfType<AssigneeDto>()
+            .Where(s => !string.Equals(s.Account, main?.Account, StringComparison.OrdinalIgnoreCase))
+            .DistinctBy(s => s.Account, StringComparer.OrdinalIgnoreCase).ToList();
 
     internal static Dictionary<string, string[]>? Validate(NodeNoteInput input)
     {
@@ -115,8 +148,9 @@ public static class NodeNoteEndpoints
             errors["memo"] = [$"メモは {AppNodeNoteLimits.MemoLength} 文字以内で入力してください"];
         var main = Clean(input.MainAssignee);
         var subs = CleanSubs(input.SubAssignees, main);
-        if (main?.Length > AppNodeNoteLimits.AssigneeLength || subs.Any(s => s.Length > AppNodeNoteLimits.AssigneeLength))
-            errors["assignee"] = [$"担当者は 1 人 {AppNodeNoteLimits.AssigneeLength} 文字以内で入力してください"];
+        if ((main is null ? subs : [main, .. subs]).Any(a =>
+                a.Account.Length > AppNodeNoteLimits.AccountLength || a.DisplayName.Length > AppNodeNoteLimits.AccountLength))
+            errors["assignee"] = ["担当者のアカウント・表示名が長すぎます"];
         if (subs.Count > AppNodeNoteLimits.MaxSubAssignees)
             errors["subAssignees"] = [$"サブの担当者は {AppNodeNoteLimits.MaxSubAssignees} 人までです"];
         return errors.Count > 0 ? errors : null;
@@ -129,12 +163,12 @@ public static class NodeNoteEndpoints
         var subs = CleanSubs(input.SubAssignees, main);
         var displayName = Clean(input.DisplayName);
         var memo = Clean(input.Memo);
-        var row = await db.AppNodeNotes.FindAsync([input.NodeKey], ct);
+        var row = await db.AppNodeNotes.Include(n => n.Assignees).FirstOrDefaultAsync(n => n.NodeKey == input.NodeKey, ct);
         if (displayName is null && memo is null && main is null && subs.Count == 0)
         {
             if (row is not null)
             {
-                db.AppNodeNotes.Remove(row);
+                db.AppNodeNotes.Remove(row); // 担当者も削除される（カスケード）
                 await db.SaveChangesAsync(ct);
             }
             return null;
@@ -146,9 +180,20 @@ public static class NodeNoteEndpoints
         }
         row.DisplayName = displayName;
         row.Memo = memo;
-        row.MainAssignee = main;
-        row.SubAssignees = subs.Count == 0 ? null : string.Join(AppNodeNoteLimits.SubSeparator, subs);
         row.UpdatedAt = now;
+        // 担当者は置き換える（一意インデックスに当たらないよう、先に削除を保存する）
+        if (row.Assignees.Count > 0)
+        {
+            db.AppNodeAssignees.RemoveRange(row.Assignees);
+            row.Assignees.Clear();
+            await db.SaveChangesAsync(ct);
+        }
+        if (main is not null)
+            row.Assignees.Add(new AppNodeAssignee { NodeKey = row.NodeKey, IsMain = true, Account = main.Account, DisplayName = main.DisplayName });
+        row.Assignees.AddRange(subs.Select((a, i) => new AppNodeAssignee
+        {
+            NodeKey = row.NodeKey, IsMain = false, SortOrder = i, Account = a.Account, DisplayName = a.DisplayName,
+        }));
         await db.SaveChangesAsync(ct);
         return NodeNoteDto.From(row);
     }

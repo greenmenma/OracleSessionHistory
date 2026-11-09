@@ -100,12 +100,13 @@ public static class ReportEndpoints
         });
 
         // 接続アプリ表：実行端末 × アプリごとの日単位の接続回数（ログオン時刻で集計）
-        // assignee：担当者で絞り込む（ConnectionTreeKeys.Unassigned は担当者が決まっていない行）
+        // assignee：担当者（AD のアカウント）で絞り込む（ConnectionTreeKeys.Unassigned は担当者が決まっていない行）
         g.MapGet("/connection-counts", async (int? targetId, string? q, string? assignee, AppDbContext db, CancellationToken ct) =>
         {
             var b = Buckets.Create(DateTime.Today);
             var (tree, audit) = await QueryConnectionTreeAsync(db, targetId, q, b.Today, ct);
-            var notes = (await db.AppNodeNotes.AsNoTracking().ToListAsync(ct)).ToDictionary(n => n.NodeKey, NodeNoteDto.From);
+            var notes = (await db.AppNodeNotes.AsNoTracking().Include(n => n.Assignees).ToListAsync(ct))
+                .ToDictionary(n => n.NodeKey, NodeNoteDto.From);
             var nodes = ConnectionTreeKeys.FilterByAssignee(ConnectionTreeKeys.Apply(tree, notes), assignee);
             return new
             {

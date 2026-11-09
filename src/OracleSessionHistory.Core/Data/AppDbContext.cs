@@ -18,6 +18,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<AuditLogonCount> AuditLogonCounts => Set<AuditLogonCount>();
     public DbSet<DirectoryUser> DirectoryUsers => Set<DirectoryUser>();
     public DbSet<AppNodeNote> AppNodeNotes => Set<AppNodeNote>();
+    public DbSet<AppNodeAssignee> AppNodeAssignees => Set<AppNodeAssignee>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -77,9 +78,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.NodeKey).HasMaxLength(AppNodeNoteLimits.NodeKeyLength);
             e.Property(x => x.DisplayName).HasMaxLength(AppNodeNoteLimits.DisplayNameLength);
             e.Property(x => x.Memo).HasMaxLength(AppNodeNoteLimits.MemoLength);
-            e.Property(x => x.MainAssignee).HasMaxLength(AppNodeNoteLimits.AssigneeLength);
-            e.Property(x => x.SubAssignees).HasMaxLength(AppNodeNoteLimits.SubAssigneesLength);
-            e.Ignore(x => x.SubAssigneeList);
+            e.HasMany(x => x.Assignees).WithOne().HasForeignKey(x => x.NodeKey).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<AppNodeAssignee>(e =>
+        {
+            e.Property(x => x.NodeKey).HasMaxLength(AppNodeNoteLimits.NodeKeyLength);
+            e.Property(x => x.Account).HasMaxLength(AppNodeNoteLimits.AccountLength);
+            e.Property(x => x.DisplayName).HasMaxLength(AppNodeNoteLimits.AccountLength);
+            // 同じ行に同じ人は 1 回だけ。担当者での絞り込み・候補はアカウントで探す
+            e.HasIndex(x => new { x.NodeKey, x.Account }).IsUnique();
+            e.HasIndex(x => x.Account);
         });
 
         b.Entity<ProcessInspectionSettings>(e =>

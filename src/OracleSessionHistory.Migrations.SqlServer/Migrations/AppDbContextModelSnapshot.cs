@@ -22,6 +22,45 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("OracleSessionHistory.Core.Entities.AppNodeAssignee", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Account")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("IsMain")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("NodeKey")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Account");
+
+                    b.HasIndex("NodeKey", "Account")
+                        .IsUnique();
+
+                    b.ToTable("AppNodeAssignees");
+                });
+
             modelBuilder.Entity("OracleSessionHistory.Core.Entities.AppNodeNote", b =>
                 {
                     b.Property<string>("NodeKey")
@@ -32,17 +71,9 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<string>("MainAssignee")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
                     b.Property<string>("Memo")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
-
-                    b.Property<string>("SubAssignees")
-                        .HasMaxLength(1010)
-                        .HasColumnType("nvarchar(1010)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -635,6 +666,15 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
                     b.ToTable("Sessions");
                 });
 
+            modelBuilder.Entity("OracleSessionHistory.Core.Entities.AppNodeAssignee", b =>
+                {
+                    b.HasOne("OracleSessionHistory.Core.Entities.AppNodeNote", null)
+                        .WithMany("Assignees")
+                        .HasForeignKey("NodeKey")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("OracleSessionHistory.Core.Entities.AuditLogonCount", b =>
                 {
                     b.HasOne("OracleSessionHistory.Core.Entities.MonitorTarget", "Target")
@@ -683,6 +723,11 @@ namespace OracleSessionHistory.Migrations.SqlServer.Migrations
                         .IsRequired();
 
                     b.Navigation("Target");
+                });
+
+            modelBuilder.Entity("OracleSessionHistory.Core.Entities.AppNodeNote", b =>
+                {
+                    b.Navigation("Assignees");
                 });
 
             modelBuilder.Entity("OracleSessionHistory.Core.Entities.MonitorTarget", b =>

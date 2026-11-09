@@ -1,9 +1,10 @@
 import { Fragment, useEffect, useState } from 'react'
-import { api, UNASSIGNED, type ConnectionCountNode, type NodeNote, type PeriodCounts } from '../api'
+import { api, UNASSIGNED, type Assignee, type ConnectionCountNode, type PeriodCounts } from '../api'
 import { useAsync } from '../hooks'
 import { fmtDate, fmtDateTime } from '../format'
 import { navigate } from '../router'
 import { UserList } from './UserName'
+import PersonPicker, { PersonChip } from './PersonPicker'
 
 type CountKey = keyof PeriodCounts
 
@@ -95,8 +96,16 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
           <button type="button" className={`assignee ${n.note?.mainAssignee || n.note?.subAssignees.length ? '' : 'empty'}`} onClick={() => setEditing(n)} title="クリックして担当者を設定">
             {n.note?.mainAssignee || n.note?.subAssignees.length ? (
               <>
-                {n.note.mainAssignee && <span className="assignee-main">{n.note.mainAssignee}</span>}
-                {n.note.subAssignees.length > 0 && <span className="assignee-sub">サブ {n.note.subAssignees.join('、')}</span>}
+                {n.note.mainAssignee && (
+                  <span className="assignee-main" title={n.note.mainAssignee.account}>
+                    {n.note.mainAssignee.displayName}
+                  </span>
+                )}
+                {n.note.subAssignees.length > 0 && (
+                  <span className="assignee-sub" title={n.note.subAssignees.map((a) => a.account).join('\n')}>
+                    サブ {n.note.subAssignees.map((a) => a.displayName).join('、')}
+                  </span>
+                )}
               </>
             ) : (
               '＋'
@@ -154,8 +163,8 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
           <select value={assignee} onChange={(e) => setAssignee(e.target.value)} title="担当者（メイン・サブ）で絞り込み">
             <option value="">担当者：すべて</option>
             {names.map((a) => (
-              <option key={a} value={a}>
-                {a}
+              <option key={a.account} value={a.account}>
+                {a.displayName}
               </option>
             ))}
             <option value={UNASSIGNED}>担当者：未設定</option>
@@ -185,7 +194,7 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
             {data ? `${nodes.length} 端末` : loading ? '読み込み中…' : ''}
             {assignee && (
               <span className="muted">
-                （担当者 {assignee === UNASSIGNED ? '未設定' : assignee} の行と、その上の段。合計は表示している端末の件数）
+                （担当者 {assignee === UNASSIGNED ? '未設定' : (names.find((a) => a.account === assignee)?.displayName ?? assignee)} の行と、その上の段。合計は表示している端末の件数）
               </span>
             )}
           </span>
@@ -239,11 +248,6 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
         </div>
       </section>
 
-      <datalist id="assignee-suggestions">
-        {names.map((a) => (
-          <option key={a} value={a} />
-        ))}
-      </datalist>
       {editing && (
         <NodeNoteEditor
           node={editing}
@@ -259,16 +263,12 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
   )
 }
 
-const emptyNote: NodeNote = { displayName: null, memo: null, mainAssignee: null, subAssignees: [] }
-
-/** 行の日本語名・メモ・担当者（メイン 1 人・サブ複数）の編集。すべて空にして保存すると設定を外す */
+/** 行の日本語名・メモ・担当者（AD から選ぶ。メイン 1 人・サブ複数）の編集。すべて空にして保存すると設定を外す */
 function NodeNoteEditor({ node, onClose, onSaved }: { node: ConnectionCountNode; onClose: () => void; onSaved: () => void }) {
-  const initial = node.note ?? emptyNote
-  const [displayName, setDisplayName] = useState(initial.displayName ?? '')
-  const [memo, setMemo] = useState(initial.memo ?? '')
-  const [main, setMain] = useState(initial.mainAssignee ?? '')
-  // サブは入力欄を 1 つ以上出す（最後の欄に入力すると次の欄を足す）
-  const [subs, setSubs] = useState<string[]>([...initial.subAssignees, ''])
+  const [displayName, setDisplayName] = useState(node.note?.displayName ?? '')
+  const [memo, setMemo] = useState(node.note?.memo ?? '')
+  const [main, setMain] = useState<Assignee | null>(node.note?.mainAssignee ?? null)
+  const [subs, setSubs] = useState<Assignee[]>(node.note?.subAssignees ?? [])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string>()
 
@@ -278,11 +278,7 @@ function NodeNoteEditor({ node, onClose, onSaved }: { node: ConnectionCountNode;
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const setSub = (i: number, v: string) => {
-    const next = subs.map((s, j) => (j === i ? v : s))
-    if (i === next.length - 1 && v.trim() && next.length < 10) next.push('')
-    setSubs(next)
-  }
+  const chosen = [...(main ? [main.account] : []), ...subs.map((s) => s.account)]
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -291,8 +287,8 @@ function NodeNoteEditor({ node, onClose, onSaved }: { node: ConnectionCountNode;
       await api.saveNodeNote(node.key, {
         displayName: displayName.trim() || null,
         memo: memo.trim() || null,
-        mainAssignee: main.trim() || null,
-        subAssignees: subs.map((s) => s.trim()).filter(Boolean),
+        mainAssignee: main,
+        subAssignees: subs,
       })
       onSaved()
     } catch (err) {
@@ -323,27 +319,23 @@ function NodeNoteEditor({ node, onClose, onSaved }: { node: ConnectionCountNode;
           />
         </label>
         <div className="row">
-          <label>
+          <div className="field">
             担当者（メイン）
-            <input list="assignee-suggestions" maxLength={100} value={main} onChange={(e) => setMain(e.target.value)} />
-          </label>
+            {main ? <PersonChip person={main} onRemove={() => setMain(null)} /> : <PersonPicker exclude={chosen} onSelect={setMain} />}
+          </div>
           <div className="field">
             担当者（サブ・複数可）
-            <div className="sub-assignees">
-              {subs.map((s, i) => (
-                <div key={i} className="sub-assignee">
-                  <input list="assignee-suggestions" maxLength={100} value={s} onChange={(e) => setSub(i, e.target.value)} />
-                  {s && (
-                    <button type="button" className="small" onClick={() => setSubs(subs.filter((_, j) => j !== i))} title="このサブ担当者を外す">
-                      ✕
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
+            {subs.length > 0 && (
+              <div className="person-chips">
+                {subs.map((p) => (
+                  <PersonChip key={p.account} person={p} onRemove={() => setSubs(subs.filter((s) => s.account !== p.account))} />
+                ))}
+              </div>
+            )}
+            {subs.length < 10 && <PersonPicker exclude={chosen} onSelect={(p) => setSubs([...subs, p])} />}
           </div>
         </div>
-        <div className="muted">すべて空にして保存すると、この行の設定を外します。</div>
+        <div className="muted">担当者は AD から検索して選びます。すべて空にして保存すると、この行の設定を外します。</div>
         <div className="actions">
           <button type="submit" className="primary" disabled={saving}>
             保存
