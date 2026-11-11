@@ -135,7 +135,7 @@ Server と **同じ** `ConnectionStrings:AppDb`・`AppDb:Provider` を設定し�
 | `RetentionDays` | 100 | 切断済み履歴の保持日数（接続アプリ表で 2 ヶ月分使うため 70 以上推奨） |
 | `ProcessInfoSeconds` | 10 | 接続元サーバーのプロセス情報を取得する間隔 |
 | `UserNameMinutes` | 10 | 実行ユーザの表示名（AD の displayName）を取得する間隔（分）。0 で取得しない |
-| `AuditLogonMinutes` | 60 | 監査証跡（DBA_AUDIT_SESSION）のログオン件数を取り直す間隔（分）。履歴が 2 ヶ月分たまるまで接続アプリ表を補う。0 で取得しない |
+| `AuditLogonMinutes` | 10 | 監査証跡（DBA_AUDIT_SESSION）のログオン件数を取り直す間隔（分）。接続アプリ表の端末の行の件数に使う（2 回目以降は前回取得した日以降だけ取り直す）。0 で取得しない |
 | `SeedDemoTarget` | false（デバッグ起動時は true） | 監視対象が無いときにデモ用を登録 |
 
 ### ログ（エラーの記録）

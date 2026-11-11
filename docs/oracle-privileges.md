@@ -22,12 +22,12 @@ GRANT SELECT ON sys.dba_scheduler_jobs         TO monitor;
 GRANT SELECT ON sys.dba_jobs_running           TO monitor; -- DBMS_JOB
 GRANT SELECT ON sys.dba_jobs                   TO monitor;
 GRANT SELECT ON sys.dba_datapump_sessions      TO monitor; -- Data Pump
-GRANT SELECT ON sys.dba_audit_session          TO monitor; -- 監査証跡のログオン件数（接続アプリ表の補完）
+GRANT SELECT ON sys.dba_audit_session          TO monitor; -- 監査証跡のログオン件数（接続アプリ表の端末の件数）
 ```
 
 まとめて付与する場合は `GRANT SELECT_CATALOG_ROLE TO monitor;` でも構いません。
 
-`dba_audit_session` は、このシステムの履歴が 2 ヶ月分たまるまで、接続アプリ表の端末の行のログオン件数を補うために使います（[screens.md](screens.md)）。標準監査でログオンを監査している（`AUDIT SESSION`）場合のみ件数があります。統合監査のみ（`UNIFIED_AUDIT_TRAIL`）の環境では件数が 0 になります。参照できない場合は接続アプリ画面に理由が表示され、補完しません（セッションの収集には影響しません）。
+`dba_audit_session` は、接続アプリ表の端末の行のログオン件数に使います（[screens.md](screens.md)）。標準監査でログオンを監査している（`AUDIT SESSION`）場合のみ件数があります。統合監査のみ（`UNIFIED_AUDIT_TRAIL`）の環境では件数が 0 になります。参照できない場合は接続アプリ画面に理由が表示され、端末の行はこのシステムの履歴の件数になります（セッションの収集には影響しません）。
 
 ## DB Link 接続元 DB
 

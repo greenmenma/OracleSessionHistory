@@ -33,7 +33,7 @@ public sealed record ConnectionCountNode(
     IReadOnlyList<string> AuditPeriods, IReadOnlyDictionary<string, string>? Open, IReadOnlyList<ConnectionCountNode> Children,
     string Key = "", NodeNoteDto? Note = null);
 
-/// <summary>監視対象ごとの監査証跡の取得状況（接続アプリ表の注記用）。From〜LastDay（両端を含む）を監査の件数で補う</summary>
+/// <summary>監視対象ごとの監査証跡の取得状況（接続アプリ表の注記用）。From〜LastDay（両端を含む）の端末の件数は監査の件数</summary>
 public sealed record AuditCoverage(string TargetName, DateTime? From, DateTime? LastDay, DateTime? FetchedAt, string? Error);
 
 public static class ConnectionCountKinds
@@ -138,8 +138,9 @@ public static class ReportEndpoints
     /// 接続アプリ表（木構造）。Oracle 内部プロセスは除く。各段は「本日〜1ヶ月」の多い順。
     /// DB Link 経由（ORACLE.EXE）で接続元を特定できたセッションは、DB サーバーの端末の ORACLE.EXE の下に、
     /// DB Link 接続元 → 接続元のアプリの段で置く。
-    /// 端末の行の件数は、監視対象ごとに監査証跡を使う期間（AuditFrom〜AuditTo）は監査の件数、それ以外は履歴の件数の合計。
-    /// 監査の件数はアプリを区別できないため下の段には入れない（絞り込み時は端末名が一致する場合だけ補う）。
+    /// 端末の行の件数は監査証跡（DBA_AUDIT_SESSION）のログオン件数。監査の件数を取得できていない監視対象・期間
+    /// （AuditFrom〜AuditTo の外）だけ履歴の件数を使う。監査の件数はアプリを区別できないため下の段は履歴の件数
+    /// （絞り込み時は端末名が一致する場合だけ監査の件数を使い、それ以外は絞り込んだ履歴の件数）。
     /// </summary>
     internal static async Task<(List<ConnectionCountNode> Nodes, List<AuditCoverage> Audit)> QueryConnectionTreeAsync(
         AppDbContext db, int? targetId, string? q, DateTime today, CancellationToken ct)
@@ -176,17 +177,20 @@ public static class ReportEndpoints
             var rows = raws.Where(r => MachineKey(r.Machine) == key).ToList();
             var history = historyDays.Where(h => MachineKey(h.Machine) == key).ToList();
             var audits = auditDays.Where(a => MachineKey(a.Machine) == key).ToList();
-            var days = history.Where(h => !Covered(h.TargetId, h.Day)).Select(h => (h.Day, h.Count))
-                .Concat(audits.Where(a => Covered(a.TargetId, a.Day)).Select(a => (a.Day, a.Count)));
-            var v = b.Sum(days);
-            // 監査の件数を使った列：この端末が現れる監視対象のうち、監査を使う期間に重なる列
-            var tids = history.Select(h => h.TargetId).Concat(audits.Select(a => a.TargetId)).Distinct()
-                .Where(coverage.ContainsKey).ToList();
-            var auditPeriods = b.Periods.Where(p => tids.Any(t => p.Start < coverage[t].To && coverage[t].From < p.End))
-                .Select(p => p.Key).ToList();
             var machine = rows.Select(r => r.Machine).FirstOrDefault(m => !string.IsNullOrEmpty(m))
                           ?? history.Select(h => h.Machine).FirstOrDefault(m => !string.IsNullOrEmpty(m))
                           ?? audits.Select(a => a.Machine).FirstOrDefault(m => !string.IsNullOrEmpty(m));
+            // 端末名で絞り込んでいない（アプリ名等で一致した）端末は、端末全体の監査の件数ではなく絞り込んだ履歴の件数
+            var useAudit = string.IsNullOrEmpty(term) || (machine ?? "").Contains(term, StringComparison.OrdinalIgnoreCase);
+            var days = history.Where(h => !useAudit || !Covered(h.TargetId, h.Day)).Select(h => (h.Day, h.Count))
+                .Concat(audits.Where(a => useAudit && Covered(a.TargetId, a.Day)).Select(a => (a.Day, a.Count)));
+            var v = b.Sum(days);
+            // 監査の件数を使った列：この端末が現れる監視対象のうち、監査の件数がある期間に重なる列
+            var tids = useAudit
+                ? history.Select(h => h.TargetId).Concat(audits.Select(a => a.TargetId)).Distinct().Where(coverage.ContainsKey).ToList()
+                : [];
+            var auditPeriods = b.Periods.Where(p => tids.Any(t => p.Start < coverage[t].To && coverage[t].From < p.End))
+                .Select(p => p.Key).ToList();
             var host = string.IsNullOrEmpty(machine) ? SessionEndpoints.UnknownMachine : machine;
             nodes.Add(new ConnectionCountNode(ConnectionCountKinds.Machine, machine ?? SessionEndpoints.UnknownMachine, null, OwnersOf(rows),
                 rows.Sum(r => r.Connected), rows.Count > 0 ? rows.Max(r => r.LastSeenAt) : null,

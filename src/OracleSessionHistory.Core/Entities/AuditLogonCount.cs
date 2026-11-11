@@ -2,7 +2,7 @@ namespace OracleSessionHistory.Core.Entities;
 
 /// <summary>
 /// 監視対象 DB の監査証跡（DBA_AUDIT_SESSION）から集計した、日・端末ごとのログオン件数。
-/// このシステムの履歴が 2 ヶ月分たまるまで、接続アプリ表の端末の行の件数を補う（Batch が更新する）。
+/// 接続アプリ表の端末の行の件数（ログオン数）に使う（Batch が更新する）。
 /// </summary>
 public class AuditLogonCount
 {

@@ -89,7 +89,6 @@ public sealed class CollectorHost(
     {
         var lastLinkPoll = DateTime.MinValue;
         var lastAuditPoll = DateTime.MinValue;
-        var auditNeeded = options.Value.AuditLogonMinutes > 0;
         while (!ct.IsCancellationRequested)
         {
             var interval = 5;
@@ -110,10 +109,11 @@ public sealed class CollectorHost(
                         lastLinkPoll = DateTime.Now;
                     }
 
-                    // 履歴が 2 ヶ月分たまるまで、監査証跡のログオン件数で接続アプリ表を補う（失敗しても収集は続ける）
-                    if (outcome.Success && auditNeeded && DateTime.Now - lastAuditPoll >= TimeSpan.FromMinutes(options.Value.AuditLogonMinutes))
+                    // 監査証跡のログオン件数（接続アプリ表の端末の件数）を取り直す（失敗しても収集は続ける）
+                    if (outcome.Success && options.Value.AuditLogonMinutes > 0
+                        && DateTime.Now - lastAuditPoll >= TimeSpan.FromMinutes(options.Value.AuditLogonMinutes))
                     {
-                        auditNeeded = (await collection.PollAuditLogonsAsync(targetId, ct)).Needed;
+                        await collection.PollAuditLogonsAsync(targetId, ct);
                         lastAuditPoll = DateTime.Now;
                     }
 

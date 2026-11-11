@@ -43,7 +43,7 @@ cd src/OracleSessionHistory.Client && npm run typecheck && npm run build
 - コマンドラインは保存前に `ClientProcessRules.MaskCredentials` でパスワードを隠す（`ProcessInfoService.Apply`）。
 - DB Link 経由（ORACLE.EXE）で接続元を特定したセッションは `TrackedSession.LinkOriginMachine` / `LinkOriginApp`（`LinkOriginSync` が更新）を持ち、接続アプリ表・ランキング・完全一致の検索は接続元の端末・アプリとして扱う。
 - 実行ユーザの表示名は AD から `UserNameService`（Batch、`IUserDirectory`。Windows は `AdUserDirectory`）が取得して `DirectoryUsers` に保存し、画面は `/api/user-names` の対応表で表示名に置き換える（`components/UserName.tsx`）。収集とは独立させる。アカウントの規則は `UserAccountRules`（`UserAccountRulesTests`）。
-- 接続アプリ表は木（端末 → 実行ファイル → プール・実行元、ORACLE.EXE → DB Link 接続元（`TrackedSession.LinkOriginSource`）→ 接続元の端末 → 接続元のアプリ。段の分け方は `AppIdentifier.SplitForTree`）。履歴が 2 ヶ月分たまるまで、端末の行は監査証跡（`AuditLogonCounts`。`CollectionService.PollAuditLogonsAsync` が DBA_AUDIT_SESSION から取得）で補う（`ReportEndpoints.QueryConnectionCountGroupsAsync`、`docs/screens.md`）。
+- 接続アプリ表は木（端末 → 実行ファイル → プール・実行元、ORACLE.EXE → DB Link 接続元（`TrackedSession.LinkOriginSource`）→ 接続元の端末 → 接続元のアプリ。段の分け方は `AppIdentifier.SplitForTree`）。端末の行の件数は監査証跡のログオン数（`AuditLogonCounts`。`CollectionService.PollAuditLogonsAsync` が DBA_AUDIT_SESSION から取得）で、取得できない期間だけ履歴の件数を使う（`ReportEndpoints.QueryConnectionTreeAsync`、`docs/screens.md`）。下の段は履歴の件数。
 - 監視対象の種類を増やすときは `ISessionSource`（と必要なら `IDbLinkInspector`）を実装し、`CoreServiceCollectionExtensions` に登録する。`SourceProviders` に定数を追加する。
 - API は接続文字列・プロセス情報取得アカウントのパスワードを返さない（`ConnectionStringMasker`、`ProcessSettingsDto.HasPassword`）。エンティティをそのまま返す場合は `MonitorTarget` / `LinkSource` を含めないこと。
 - 監視対象の設定を変更したら `UpdatedAt` を更新する（Batch はこの値で再起動を判断する）。

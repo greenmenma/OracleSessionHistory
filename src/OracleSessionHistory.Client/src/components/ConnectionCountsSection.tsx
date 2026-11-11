@@ -24,10 +24,12 @@ const columns: { key: CountKey; label: string; period: string }[] = [
 const leadColumns = 5
 const columnCount = leadColumns + columns.length + 1
 
-const auditTitle = 'DBA_AUDIT_SESSION（監査証跡）のログオン件数を含みます（このシステムの履歴がまだ無い期間）'
+const auditTitle = 'DBA_AUDIT_SESSION（監査証跡）のログオン件数'
+const historyTitle = 'このシステムが取得したセッション数（監査証跡の件数が無い期間・絞り込みで端末名が一致しない端末）'
 
 const description =
-  '実行端末 → 実行ファイル → IIS のプール・sqlplus の実行元の順に、ログオン回数（取得できたセッション数）を表示します。' +
+  '実行端末 → 実行ファイル → IIS のプール・sqlplus の実行元の順に、ログオン回数を表示します。' +
+  '端末の行は DBA_AUDIT_SESSION（監査証跡）のログオン件数、下の段はこのシステムが取得したセッション数です（短いセッションは取りこぼすため、端末の行より少なくなることがあります）。' +
   'DB Link 経由の接続は、DB サーバーの ORACLE.EXE の下に DB Link 接続元 → 接続元の端末 → 接続元のアプリで表示します。' +
   'Oracle 内部プロセス（ジョブ等）は含みません。✎ または担当者の欄をクリックすると、日本語名・メモ・担当者（メイン・サブ）を設定できます'
 
@@ -120,6 +122,8 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
         {columns.map((c, i) => {
           const v = n[c.key]
           const audit = n.auditPeriods.includes(c.key)
+          // 端末の行で監査の件数を使えなかった列（履歴の件数）には ※ を付ける
+          const fromHistory = n.kind === 'machine' && guides.length === 0 && !audit
           const leaf = n.children.length === 0 && n.kind !== 'machine'
           const heat = leaf && i < 7 && v > 0 ? 0.08 + (v / max) * 0.5 : 0
           return (
@@ -127,9 +131,9 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
               key={c.key}
               className={`num ${i >= 7 ? 'sep' : ''} ${v === 0 ? 'zero' : ''}`}
               style={heat ? { background: `rgb(var(--heat) / ${heat})` } : undefined}
-              title={audit ? auditTitle : undefined}
+              title={audit ? auditTitle : fromHistory ? historyTitle : undefined}
             >
-              {audit && <span className="audit-mark">※</span>}
+              {fromHistory && audits.length > 0 && <span className="audit-mark">※</span>}
               {v.toLocaleString()}
             </td>
           )
@@ -178,11 +182,12 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
       {error && <div className="alert error">{error}</div>}
       {audits.length > 0 && (
         <div className="audit-note muted">
-          <span className="audit-mark">※</span> の件数は、このシステムの履歴がまだ無い期間を DBA_AUDIT_SESSION（監査証跡）のログオン件数で補っています（端末の行のみ）。
+          端末の行の件数は DBA_AUDIT_SESSION（監査証跡）のログオン件数です（下の段はこのシステムが取得したセッション数）。
+          <span className="audit-mark">※</span> は監査証跡の件数が無く、このシステムの履歴の件数を表示している列です。
           {audits.map((a) => (
             <span key={a.targetName}>
               {' '}
-              {a.targetName}：{a.from && a.lastDay ? `${fmtDate(a.from)} 〜 ${fmtDate(a.lastDay)} を補完` : '補完なし'}（取得 {fmtDateTime(a.fetchedAt)}）
+              {a.targetName}：{a.from && a.lastDay ? `${fmtDate(a.from)} 〜 ${fmtDate(a.lastDay)}` : '監査の件数なし'}（取得 {fmtDateTime(a.fetchedAt)}）
               {a.error && <span className="error-text"> 取得できませんでした：{a.error}</span>}
             </span>
           ))}

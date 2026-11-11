@@ -23,7 +23,7 @@ dotnet run --project src/OracleSessionHistory.AppHost
 
 - ログに出る Login URL で Aspire ダッシュボードを開き、`client` の URL から画面を開く。
 - 履歴 DB はリポジトリ直下の `.data/oraclesessionhistory.db`（SQLite）。`appsettings.json` はリリース用（SQL Server の仮の値）で、デバッグ時は AppHost / `launchSettings.json` が `AppDb__Provider=Sqlite` を指定している。`appsettings.Development.json` は使わない（リリース環境が 1 つのため）。
-- デバッグ起動時（`Collector__SeedDemoTarget=true`）は監視対象が無いと Batch が「デモDB」（Provider=Demo）と過去 3 週間分の履歴を作成する（それより前は監査証跡の疑似データで補完）。Oracle 無しで全画面を確認できる。
+- デバッグ起動時（`Collector__SeedDemoTarget=true`）は監視対象が無いと Batch が「デモDB」（Provider=Demo）と過去 3 週間分の履歴を作成する（端末の行の件数は監査証跡の疑似データ）。Oracle 無しで全画面を確認できる。
 - デモ登録時はプロセス情報の取得も有効になり、Demo の監視対象は疑似プロセス情報（`DemoProcessInspector`）を返す。
 - デモは 20 回に 1 回取得失敗を発生させる。失敗時に接続数が減らない（切断扱いにならない）ことを確認できる。
 
@@ -44,7 +44,7 @@ cd src/OracleSessionHistory.Client && npm run dev       # http://localhost:5173 
 - セッション履歴：検索条件なしで新しいログオン順に表示される。行クリックで詳細
 - ORACLE.EXE のセッションに「DB Linkの可能性」バッジ、詳細に接続元の説明
 - 接続アプリ（サマリーの下）：端末 → 実行ファイル（w3wp.exe・sqlplus.exe 等）→ プール・実行元の木で、本日〜6日前・本日〜1ヶ月・1ヶ月〜2ヶ月の列。Oracle 内部プロセス（ジョブ等）が出ないこと
-- 接続アプリ：デモの履歴は 3 週間分のため、それより前の列は端末の行に「※」（監査証跡の疑似データで補完）が付き、上部に補完した期間が出る
+- 接続アプリ：端末の行は監査証跡の疑似データの件数（下の段の合計とは一致しない）。上部に監査の件数の期間が出る
 - セッション履歴：「アプリ」列にアプリ名と補足。デモでは `DEV-PC07` が「取得失敗」、`ORACLE.EXE (J000)` は「Oracle 内部プロセスも表示」で出る
 - 設定：「プロセス情報の取得」の保存（パスワード欄を触らずに保存しても保持される）。macOS では接続テストが「Windows のみ」になる
 - sqlplus.exe：デモでは `BATCHSV02` が `sqlplus.exe: 月次集計.bat`、`OPE-PC01` が `sqlplus.exe: cmd.exe`。詳細に「実行元」、コマンドラインのパスワードは `********`
