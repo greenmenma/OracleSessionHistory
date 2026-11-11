@@ -181,6 +181,10 @@ table.tree tr.tree-exe td:first-child .tree-name { font-weight: 600; }
 table.tree tr.tree-other td:first-child .tree-name { color: var(--muted); font-style: italic; }
 .tree-cell { display: flex; align-items: flex-start; }
 .tree-line { color: var(--muted); font-family: ui-monospace, monospace; white-space: pre; line-height: 1.5; }
+button.tree-toggle { background: none; border: none; padding: 0; width: 16px; flex: none; color: var(--muted); font-size: 11px; line-height: 1.9; cursor: pointer; }
+button.tree-toggle:hover { color: var(--text); }
+.tree-toggle-space { width: 16px; flex: none; }
+.tree-levels { display: flex; gap: 4px; flex-wrap: wrap; }
 .tree-label { min-width: 120px; max-width: 420px; }
 .tree-name { overflow-wrap: anywhere; }
 .tree-kind { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); }

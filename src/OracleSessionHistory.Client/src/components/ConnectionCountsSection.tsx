@@ -31,12 +31,20 @@ const description =
   '実行端末 → 実行ファイル → IIS のプール・sqlplus の実行元の順に、ログオン回数を表示します。' +
   '端末の行は DBA_AUDIT_SESSION（監査証跡）のログオン件数、下の段はこのシステムが取得したセッション数です（短いセッションは取りこぼすため、端末の行より少なくなることがあります）。' +
   'DB Link 経由の接続は、DB サーバーの ORACLE.EXE の下に DB Link 接続元 → 接続元の端末 → 接続元のアプリで表示します。' +
-  'Oracle 内部プロセス（ジョブ等）は含みません。✎ または担当者の欄をクリックすると、日本語名・メモ・担当者（メイン・サブ）を設定できます'
+  'Oracle 内部プロセス（ジョブ等）は含みません。▾ / ▸ で展開・縮小（Shift+クリックで下の段もまとめて）、右上のボタンで段ごとに展開・縮小できます。✎ または担当者の欄をクリックすると、日本語名・メモ・担当者（メイン・サブ）を設定できます'
 
 /** 下の段の無い行（日別の列に件数の背景色を付ける） */
 function leaves(nodes: ConnectionCountNode[]): ConnectionCountNode[] {
   return nodes.flatMap((n) => (n.children.length === 0 && n.kind !== 'machine' ? [n] : leaves(n.children)))
 }
+
+/** 下の段を持つ行のキーと段（0 が端末） */
+function branches(nodes: ConnectionCountNode[], depth = 0): { key: string; depth: number }[] {
+  return nodes.flatMap((n) => (n.children.length === 0 ? [] : [{ key: n.key, depth }, ...branches(n.children, depth + 1)]))
+}
+
+/** 段の名前（展開ボタンの説明） */
+const levelNames = ['端末', '実行ファイル', 'プール・実行元・DB Link', '接続元の端末', '接続元の実行ファイル', '接続元のプール・実行元']
 
 /** 接続アプリ表（サマリーのメイン。表の中でスクロールし、見出し・合計・スクロールバーは常に見える） */
 export default function ConnectionCountsSection({ targetId }: { targetId?: number }) {
@@ -50,12 +58,30 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
   )
   const suggestions = useAsync(() => api.assignees(), [], undefined)
   const [editing, setEditing] = useState<ConnectionCountNode>()
+  // 縮小している行のキー（既定は全展開）
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
 
   const nodes = data?.nodes ?? []
   const totals = columns.map((c) => nodes.reduce((a, n) => a + n[c.key], 0))
   const max = Math.max(1, ...leaves(nodes).flatMap((n) => columns.slice(0, 7).map((c) => n[c.key])))
   const audits = data?.audit ?? []
   const names = suggestions.data ?? []
+  const allBranches = branches(nodes)
+  const levels = allBranches.length === 0 ? 0 : Math.max(...allBranches.map((b) => b.depth)) + 1
+
+  /** level 段目まで表示する（それより下の段を持つ行を縮小する。0 は端末だけ） */
+  const showLevel = (level: number) => setCollapsed(new Set(allBranches.filter((b) => b.depth >= level).map((b) => b.key)))
+
+  /** 行の展開・縮小。deep のときはその行の下の段もまとめて同じ状態にする */
+  const toggle = (n: ConnectionCountNode, deep: boolean) => {
+    const next = new Set(collapsed)
+    const close = !collapsed.has(n.key)
+    for (const k of deep ? [n.key, ...branches(n.children).map((b) => b.key)] : [n.key]) {
+      if (close) next.add(k)
+      else next.delete(k)
+    }
+    setCollapsed(next)
+  }
 
   /**
    * 1 行と、その下の段を再帰的に描く。
@@ -71,6 +97,19 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
                 {guides.slice(1).map((g) => (g ? '│ ' : '  ')).join('')}
                 {last ? '└ ' : '├ '}
               </span>
+            )}
+            {n.children.length > 0 ? (
+              <button
+                type="button"
+                className="tree-toggle"
+                onClick={(e) => toggle(n, e.shiftKey)}
+                title={`${collapsed.has(n.key) ? '展開' : '縮小'}（Shift+クリックで下の段もまとめて）`}
+                aria-expanded={!collapsed.has(n.key)}
+              >
+                {collapsed.has(n.key) ? '▸' : '▾'}
+              </button>
+            ) : (
+              <span className="tree-toggle-space" />
             )}
             <div className="tree-label">
               {n.kind === 'dblink' && <span className="tree-kind">DB Link</span>}
@@ -146,7 +185,7 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
           )}
         </td>
       </tr>
-      {n.children.map((c, i) => renderNode(c, [...guides, !last], i === n.children.length - 1))}
+      {!collapsed.has(n.key) && n.children.map((c, i) => renderNode(c, [...guides, !last], i === n.children.length - 1))}
     </Fragment>
   )
 
@@ -203,6 +242,24 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
               </span>
             )}
           </span>
+          {levels > 0 && (
+            <span className="tree-levels">
+              <button type="button" className="small" onClick={() => setCollapsed(new Set())} title="すべての段を表示">
+                全展開
+              </button>
+              {Array.from({ length: levels }, (_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className="small"
+                  onClick={() => showLevel(i)}
+                  title={i === 0 ? '端末だけを表示（全縮小）' : `${levelNames[i] ?? `${i + 1} 段目`}までを表示`}
+                >
+                  {i === 0 ? '全縮小' : `${i + 1} 段目まで`}
+                </button>
+              ))}
+            </span>
+          )}
         </div>
         <div className="table-wrap">
           <table className="counts tree">
