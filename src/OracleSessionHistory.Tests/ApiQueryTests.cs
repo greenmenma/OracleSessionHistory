@@ -269,7 +269,7 @@ public sealed class ApiQueryTests : IDisposable
 
         Assert.Equal(["WEB01", "WEB02"], nodes.Select(n => n.Label));
         var web01 = Find(nodes, "WEB01");
-        Assert.Equal((2, 3, 1), (web01.Today, web01.Month1, web01.Connected)); // 端末の行は下の段の合計
+        Assert.Equal((2, 3, 1), (web01.Today, web01.Month1, web01.Connected)); // 監査証跡が無ければ端末の行は下の段の合計
         Assert.Empty(web01.AuditPeriods);
         var foo = Find(nodes, "WEB01", "w3wp.exe", "Foo");
         Assert.Equal((1, 1, 2, 1), (foo.Today, foo.D1, foo.Month1, foo.Connected));
@@ -286,41 +286,69 @@ public sealed class ApiQueryTests : IDisposable
     }
 
     [Fact]
-    public async Task 履歴が無い期間は端末の行を監査証跡の件数で補う()
+    public async Task 端末の行は監査証跡のログオン件数を使う()
     {
-        // 履歴は 3 日前の昼から（3 日前は途中からのため監査の件数を使う。2 日前以降は履歴）
-        Add(ProcessKinds.Client, "WEB01", "IIS: Foo", logon: Today.AddDays(-3).AddHours(13));
-        Add(ProcessKinds.Client, "WEB01", "IIS: Foo", logon: Today.AddDays(-2).AddHours(9));
         Add(ProcessKinds.Client, "WEB01", "IIS: Foo", logon: Today.AddHours(9));
-        SetAudit(Today.AddMonths(-2), Today.AddDays(-2),
-            (Today.AddDays(-3), "web01", 10), (Today.AddDays(-5), "WEB01", 4), (Today.AddDays(-40), "WEB01", 7),
+        Add(ProcessKinds.Client, "WEB01", "IIS: Foo", logon: Today.AddDays(-1).AddHours(9));
+        SetAudit(Today.AddMonths(-2), Today.AddDays(1),
+            (Today, "web01", 5), (Today.AddDays(-1), "WEB01", 8), (Today.AddDays(-40), "WEB01", 7),
             (Today.AddDays(-4), "PC-OLD", 2), (Today.AddMonths(-3), "WEB01", 99)); // 期間外は数えない
 
         var (nodes, audit) = await ReportEndpoints.QueryConnectionTreeAsync(_db, null, null, Today, default);
 
         var web01 = Find(nodes, "WEB01");
-        Assert.Equal((1, 1, 10, 0, 4), (web01.Today, web01.D2, web01.D3, web01.D4, web01.D5));
-        Assert.Equal((1 + 1 + 10 + 4, 7), (web01.Month1, web01.Month2));
-        Assert.Equal(["d3", "d4", "d5", "d6", "month1", "month2"], web01.AuditPeriods);
-        // 下の段（アプリ）は履歴の件数のみ
-        Assert.Equal(3, web01.Children.Single().Month1);
+        Assert.Equal((5, 8, 13, 7), (web01.Today, web01.D1, web01.Month1, web01.Month2));
+        Assert.Equal(["today", "d1", "d2", "d3", "d4", "d5", "d6", "month1", "month2"], web01.AuditPeriods);
+        // 下の段（アプリ）は履歴の件数
+        Assert.Equal((1, 2), (web01.Children.Single().Today, web01.Children.Single().Month1));
         // 履歴に無い端末も監査の件数だけで端末の行に出す
         var old = Find(nodes, "PC-OLD");
         Assert.Equal((2, 0), (old.D4, old.Children.Count));
-        Assert.Equal(Today.AddDays(-3), audit.Single().LastDay);
+        Assert.Equal(Today, audit.Single().LastDay);
     }
 
     [Fact]
-    public async Task 絞り込み時は端末名が一致する場合だけ監査証跡で補う()
+    public async Task 監査証跡の件数が無い期間だけ端末の行に履歴の件数を使う()
+    {
+        // 監査の件数は 3 日前まで（2 日前以降は履歴の件数）
+        Add(ProcessKinds.Client, "WEB01", "IIS: Foo", logon: Today.AddDays(-3).AddHours(13));
+        Add(ProcessKinds.Client, "WEB01", "IIS: Foo", logon: Today.AddDays(-2).AddHours(9));
+        Add(ProcessKinds.Client, "WEB01", "IIS: Foo", logon: Today.AddHours(9));
+        SetAudit(Today.AddMonths(-2), Today.AddDays(-2), (Today.AddDays(-3), "web01", 10), (Today.AddDays(-5), "WEB01", 4));
+
+        var (nodes, _) = await ReportEndpoints.QueryConnectionTreeAsync(_db, null, null, Today, default);
+
+        var web01 = Find(nodes, "WEB01");
+        Assert.Equal((1, 1, 10, 0, 4), (web01.Today, web01.D2, web01.D3, web01.D4, web01.D5));
+        Assert.Equal(["d3", "d4", "d5", "d6", "month1", "month2"], web01.AuditPeriods);
+    }
+
+    [Fact]
+    public async Task 監査証跡を取得できていない監視対象は端末の行に履歴の件数を使う()
     {
         Add(ProcessKinds.Client, "WEB01", "IIS: Foo", logon: Today.AddHours(9));
-        SetAudit(Today.AddMonths(-2), Today.AddDays(-2), (Today.AddDays(-3), "WEB01", 10));
+
+        var (nodes, audit) = await ReportEndpoints.QueryConnectionTreeAsync(_db, null, null, Today, default);
+
+        Assert.Equal(1, Find(nodes, "WEB01").Today);
+        Assert.Empty(Find(nodes, "WEB01").AuditPeriods);
+        Assert.Empty(audit);
+    }
+
+    [Fact]
+    public async Task 絞り込み時は端末名が一致する場合だけ監査証跡の件数を使う()
+    {
+        Add(ProcessKinds.Client, "WEB01", "IIS: Foo", logon: Today.AddHours(9));
+        Add(ProcessKinds.Client, "WEB01", "IIS: Bar", logon: Today.AddHours(10));
+        SetAudit(Today.AddMonths(-2), Today.AddDays(1), (Today, "WEB01", 10));
 
         var (byApp, _) = await ReportEndpoints.QueryConnectionTreeAsync(_db, null, "Foo", Today, default);
         var (byMachine, _) = await ReportEndpoints.QueryConnectionTreeAsync(_db, null, "web0", Today, default);
 
-        Assert.Equal(0, byApp.Single().D3);
-        Assert.Equal(10, byMachine.Single().D3);
+        // アプリ名で絞り込んだ場合は、端末全体の監査の件数ではなく一致したアプリの履歴の件数
+        Assert.Equal(1, byApp.Single().Today);
+        Assert.Empty(byApp.Single().AuditPeriods);
+        Assert.Equal(10, byMachine.Single().Today);
     }
 
     [Fact]

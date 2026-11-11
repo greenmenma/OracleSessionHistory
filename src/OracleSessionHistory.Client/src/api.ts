@@ -289,7 +289,7 @@ export const UNASSIGNED = '(未設定)'
 /** 監視対象ごとの監査証跡の取得状況 */
 export interface AuditCoverage {
   targetName: string
-  /** 監査の件数で補う期間（両端を含む） */
+  /** 端末の行に監査の件数を使う期間（両端を含む） */
   from: string | null
   lastDay: string | null
   fetchedAt: string | null

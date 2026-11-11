@@ -286,30 +286,21 @@ public sealed class CollectionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task 監査証跡のログオン件数を履歴が丸1日そろう前日まで取得する()
+    public async Task 監査証跡のログオン件数を2ヶ月前から本日まで取得する()
     {
-        var firstSeen = DateTime.Today.AddDays(-10).AddHours(13);
-        using (var db = _factory.CreateDbContext())
-        {
-            db.Sessions.Add(new TrackedSession
-            {
-                TargetId = _targetId, InstId = 1, Sid = 1, Serial = 1, LogonTime = firstSeen, Machine = "WEB01", AppName = "x",
-                FirstSeenAt = firstSeen, LastSeenAt = firstSeen,
-            });
-            db.SaveChanges();
-        }
+        // 履歴の有無にかかわらず、接続アプリ表の期間全体を取得する
         _source.Audit =
         [
             new(DateTime.Today.AddDays(-20), "WEB01", 5),
             new(DateTime.Today.AddDays(-20), " web01 ", 2), // 大文字小文字・空白の違いは同じ端末
-            new(DateTime.Today.AddDays(-10), null, 3),
+            new(DateTime.Today, null, 3),
         ];
 
         var r = await _service.PollAuditLogonsAsync(_targetId, default);
 
-        Assert.True(r is { Needed: true, Success: true, Rows: 2 });
+        Assert.True(r is { Success: true, Rows: 2 });
         var from = DateTime.Today.AddMonths(-2);
-        var to = DateTime.Today.AddDays(-9);
+        var to = DateTime.Today.AddDays(1);
         Assert.Equal((from, to), _source.AuditCalls.Single());
         using var db2 = _factory.CreateDbContext();
         var rows = await db2.AuditLogonCounts.OrderBy(a => a.Day).ToListAsync();
@@ -319,23 +310,30 @@ public sealed class CollectionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task 履歴が2ヶ月分たまったら監査証跡を取得しない()
+    public async Task 監査証跡は前回取得した日以降だけ取り直し期間より古い件数を消す()
     {
-        var firstSeen = DateTime.Today.AddMonths(-2).AddDays(-1);
+        var today = DateTime.Today;
         using (var db = _factory.CreateDbContext())
         {
-            db.Sessions.Add(new TrackedSession
-            {
-                TargetId = _targetId, InstId = 1, Sid = 1, Serial = 1, LogonTime = firstSeen, Machine = "WEB01", AppName = "x",
-                FirstSeenAt = firstSeen, LastSeenAt = firstSeen,
-            });
+            var t = db.Targets.Single();
+            // 前回は 2 日前に取得（2 日前は途中までの件数）
+            (t.AuditFrom, t.AuditTo) = (today.AddMonths(-2).AddDays(-2), today.AddDays(-1));
+            db.AuditLogonCounts.AddRange(
+                new AuditLogonCount { TargetId = _targetId, Day = today.AddMonths(-2).AddDays(-1), Machine = "OLD", Count = 9 },
+                new AuditLogonCount { TargetId = _targetId, Day = today.AddDays(-3), Machine = "WEB01", Count = 4 },
+                new AuditLogonCount { TargetId = _targetId, Day = today.AddDays(-2), Machine = "WEB01", Count = 1 });
             db.SaveChanges();
         }
+        _source.Audit = [new(today.AddDays(-2), "WEB01", 6), new(today, "WEB01", 2)];
 
-        var r = await _service.PollAuditLogonsAsync(_targetId, default);
+        await _service.PollAuditLogonsAsync(_targetId, default);
 
-        Assert.False(r.Needed);
-        Assert.Empty(_source.AuditCalls);
+        Assert.Equal((today.AddDays(-2), today.AddDays(1)), _source.AuditCalls.Single());
+        using var db2 = _factory.CreateDbContext();
+        var rows = await db2.AuditLogonCounts.OrderBy(a => a.Day).ToListAsync();
+        Assert.Equal([(today.AddDays(-3), 4), (today.AddDays(-2), 6), (today, 2)], rows.Select(a => (a.Day, a.Count)));
+        var target = await db2.Targets.SingleAsync();
+        Assert.Equal((today.AddMonths(-2), today.AddDays(1)), (target.AuditFrom!.Value, target.AuditTo!.Value));
     }
 
     [Fact]

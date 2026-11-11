@@ -13,10 +13,10 @@ public sealed class CollectorOptions
     public int ProcessInfoSeconds { get; set; } = 10;
 
     /// <summary>
-    /// 監査証跡（DBA_AUDIT_SESSION）のログオン件数を取り直す間隔（分）。履歴が 2 ヶ月分たまるまで、接続アプリ表の端末の行を補う。
-    /// 0 以下で取得しない
+    /// 監査証跡（DBA_AUDIT_SESSION）のログオン件数を取り直す間隔（分）。接続アプリ表の端末の行の件数に使う
+    /// （2 回目以降は前回取得した日以降だけを取り直す）。0 以下で取得しない
     /// </summary>
-    public int AuditLogonMinutes { get; set; } = 60;
+    public int AuditLogonMinutes { get; set; } = 10;
 
     /// <summary>実行ユーザの表示名（AD の displayName）を取得する間隔（分）。0 以下で取得しない</summary>
     public int UserNameMinutes { get; set; } = 10;

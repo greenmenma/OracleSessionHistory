@@ -236,7 +236,7 @@ public sealed class DemoDbLinkInspector(DemoWorld world) : IDbLinkInspector
 }
 
 /// <summary>
-/// デモ用の過去履歴（接続数表の確認用に約 3 週間分）。それより前は監査証跡の疑似データ（<see cref="DemoSessionSource.CaptureAuditLogonsAsync"/>）で補う
+/// デモ用の過去履歴（接続数表の確認用に約 3 週間分）。端末の行の件数は監査証跡の疑似データ（<see cref="DemoSessionSource.CaptureAuditLogonsAsync"/>）
 /// </summary>
 public static class DemoHistory
 {
