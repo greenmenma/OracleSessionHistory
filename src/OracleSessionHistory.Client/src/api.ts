@@ -251,11 +251,18 @@ export interface ConnectionCountNode extends PeriodCounts {
   /** クリックで開くセッション履歴の検索条件 */
   open: Record<string, string> | null
   children: ConnectionCountNode[]
-  /** 行のキー（上の段からの経路。日本語名・メモ・対応担当者の保存に使う） */
+  /** 行のキー（展開・縮小に使う。端末別は上の段からの経路） */
   key: string
   /** 画面から設定した日本語名・メモ・対応担当者（未設定は null） */
   note: NodeNote | null
+  /** メモ・対応担当者を保存するキー（端末別の経路。null はこの行では設定しない） */
+  noteKey: string | null
+  /** 日本語名を保存するキー（アプリの行はアプリ単位で共通のキー。null はこの行では設定しない） */
+  nameKey: string | null
 }
+
+/** 接続アプリ表の表示：端末別（端末 → 実行ファイル → アプリ）・アプリ別（実行ファイル → アプリ → 端末） */
+export type ConnectionView = 'machine' | 'app'
 
 /** 接続アプリ表の行に設定する情報 */
 export interface NodeNote {
@@ -399,8 +406,8 @@ export const api = {
   /** 実行ユーザの表示名（アカウントを大文字にした値 → AD の displayName） */
   userNames: () => request<Record<string, string>>('GET', 'api/user-names'),
   /** assignee：担当者（AD のアカウント）で絞り込む（UNASSIGNED は担当者が決まっていない行） */
-  connectionCounts: (targetId?: number, q?: string, assignee?: string) =>
-    request<ConnectionCounts>('GET', `api/connection-counts${qs({ targetId, q, assignee })}`),
+  connectionCounts: (targetId?: number, q?: string, assignee?: string, view?: ConnectionView) =>
+    request<ConnectionCounts>('GET', `api/connection-counts${qs({ targetId, q, assignee, view: view === 'app' ? 'app' : undefined })}`),
 
   linkSources: (targetId: number) => request<LinkSource[]>('GET', `api/targets/${targetId}/link-sources`),
   createLinkSource: (targetId: number, l: LinkSourceInput) =>
@@ -421,7 +428,10 @@ export const api = {
   assignees: () => request<Assignee[]>('GET', 'api/assignees'),
   /** 担当者を選ぶための AD の検索（名前・アカウント・メールアドレス） */
   searchPeople: (q: string) => request<DirectoryPerson[]>('GET', `api/directory/people${qs({ q })}`),
-  /** 接続アプリ表の行の日本語名・メモ・対応担当者を保存する（すべて空なら設定を外す） */
-  saveNodeNote: (nodeKey: string, note: NodeNote) =>
-    request<{ note: NodeNote | null }>('PUT', 'api/node-notes', { nodeKey, ...note }),
+  /**
+   * 接続アプリ表の行の日本語名・メモ・対応担当者を保存する（すべて空なら設定を外す）。
+   * 日本語名は nameKey（アプリ単位のキー等）、メモ・担当者は nodeKey に保存する（nodeKey が null なら日本語名だけ）
+   */
+  saveNodeNote: (nodeKey: string | null, nameKey: string | null, note: NodeNote) =>
+    request<{ note: NodeNote | null }>('PUT', 'api/node-notes', { nodeKey, nameKey, ...note }),
 }

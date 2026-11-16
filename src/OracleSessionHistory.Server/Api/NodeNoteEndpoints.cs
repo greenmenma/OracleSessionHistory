@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using OracleSessionHistory.Core.Data;
 using OracleSessionHistory.Core.Entities;
+using OracleSessionHistory.Core.Processes;
 using OracleSessionHistory.Core.Users;
 
 namespace OracleSessionHistory.Server.Api;
@@ -21,15 +22,25 @@ public sealed record NodeNoteDto(string? DisplayName, string? Memo, AssigneeDto?
             n.Assignees.Where(a => !a.IsMain).OrderBy(a => a.SortOrder).Select(a => new AssigneeDto(a.Account, a.DisplayName)).ToList());
     }
 
+    /// <summary>日本語名を置き換える（すべて空になる場合は null）</summary>
+    public static NodeNoteDto? WithName(NodeNoteDto? note, string? displayName)
+    {
+        var n = (note ?? new NodeNoteDto(null, null, null, [])) with { DisplayName = displayName };
+        return n.DisplayName is null && n.Memo is null && n.MainAssignee is null && n.SubAssignees.Count == 0 ? null : n;
+    }
+
     /// <summary>メイン・サブの担当者すべて（画面には返さない）</summary>
     [JsonIgnore]
     public IEnumerable<AssigneeDto> Assignees => MainAssignee is null ? SubAssignees : [MainAssignee, .. SubAssignees];
 }
 
-/// <param name="NodeKey">接続アプリ表の行のキー（<see cref="ConnectionCountNode.Key"/>）</param>
+/// <param name="NodeKey">メモ・担当者を保存する行のキー（<see cref="ConnectionCountNode.NoteKey"/>。null は日本語名だけを保存する）</param>
 /// <param name="MainAssignee">メインの担当者（AD から選んだ人。null は未設定）</param>
 /// <param name="SubAssignees">サブの担当者（重複・メインと同じ人は除く）</param>
-public sealed record NodeNoteInput(string NodeKey, string? DisplayName, string? Memo, AssigneeDto? MainAssignee, IReadOnlyList<AssigneeDto>? SubAssignees);
+/// <param name="NameKey">日本語名を保存するキー（<see cref="ConnectionCountNode.NameKey"/>。null は <paramref name="NodeKey"/> と同じ）</param>
+public sealed record NodeNoteInput(
+    string? NodeKey, string? DisplayName, string? Memo, AssigneeDto? MainAssignee, IReadOnlyList<AssigneeDto>? SubAssignees,
+    string? NameKey = null);
 
 /// <summary>接続アプリ表の行のキーと、担当者での絞り込み</summary>
 public static class ConnectionTreeKeys
@@ -40,17 +51,46 @@ public static class ConnectionTreeKeys
     /// <summary>担当者での絞り込みで、担当者が決まっていない行を表す値</summary>
     public const string Unassigned = "(未設定)";
 
+    /// <summary>アプリ単位の日本語名のキーの接頭辞（行のキーは端末「machine:」から始まるため重ならない）</summary>
+    public const string AppNamePrefix = "appname:";
+
     /// <summary>上の段のキーに、この段の「種類:名前」をつなげる</summary>
     public static string Of(string? parentKey, string kind, string label) =>
         string.IsNullOrEmpty(parentKey) ? $"{kind}:{label}" : $"{parentKey}{Separator}{kind}:{label}";
 
-    /// <summary>木の各行にキーと設定した情報を付ける</summary>
+    /// <summary>アプリ単位の日本語名のキー（大文字小文字は区別しない）</summary>
+    public static string AppKeyOf(string appName) => AppNamePrefix + appName.Trim().ToUpperInvariant();
+
+    /// <summary>
+    /// 日本語名をアプリ単位で共通にする行なら、そのキー（<see cref="AppIdentifier.AppUnitName"/>）。
+    /// <paramref name="parentExe"/> は上の段の実行ファイル（プール・実行元・dll の行の場合）
+    /// </summary>
+    public static string? AppKeyFor(ConnectionCountNode n, string? parentExe) =>
+        (n.Kind switch
+        {
+            ConnectionCountKinds.Exe when n.Children.Count == 0 => AppIdentifier.AppUnitName(n.Label, null),
+            ConnectionCountKinds.App when parentExe is not null => AppIdentifier.AppUnitName(parentExe, n.Label),
+            _ => null,
+        }) is { } app ? AppKeyOf(app) : null;
+
+    /// <summary>
+    /// 木の各行にキーと設定した情報を付ける。アプリの行の日本語名はアプリ単位のキーの値
+    /// （未設定なら、アプリ単位にする前に行に設定した日本語名）
+    /// </summary>
     public static IReadOnlyList<ConnectionCountNode> Apply(
-        IReadOnlyList<ConnectionCountNode> nodes, IReadOnlyDictionary<string, NodeNoteDto> notes, string? parentKey = null) =>
+        IReadOnlyList<ConnectionCountNode> nodes, IReadOnlyDictionary<string, NodeNoteDto> notes, string? parentKey = null,
+        string? parentExe = null) =>
         nodes.Select(n =>
         {
             var key = Of(parentKey, n.Kind, n.Label);
-            return n with { Key = key, Note = notes.GetValueOrDefault(key), Children = Apply(n.Children, notes, key) };
+            var note = notes.GetValueOrDefault(key);
+            var appKey = AppKeyFor(n, parentExe);
+            if (appKey is not null) note = NodeNoteDto.WithName(note, notes.GetValueOrDefault(appKey)?.DisplayName ?? note?.DisplayName);
+            return n with
+            {
+                Key = key, NoteKey = key, NameKey = appKey ?? key, Note = note,
+                Children = Apply(n.Children, notes, key, n.Kind == ConnectionCountKinds.Exe ? n.Label : null),
+            };
         }).ToList();
 
     /// <summary>
@@ -140,8 +180,9 @@ public static class NodeNoteEndpoints
     internal static Dictionary<string, string[]>? Validate(NodeNoteInput input)
     {
         var errors = new Dictionary<string, string[]>();
-        if (string.IsNullOrWhiteSpace(input.NodeKey)) errors["nodeKey"] = ["行のキーがありません"];
-        else if (input.NodeKey.Length > AppNodeNoteLimits.NodeKeyLength) errors["nodeKey"] = ["この行は名前が長すぎるため設定できません"];
+        if (Clean(input.NodeKey) is null && Clean(input.NameKey) is null) errors["nodeKey"] = ["行のキーがありません"];
+        else if (input.NodeKey?.Length > AppNodeNoteLimits.NodeKeyLength || input.NameKey?.Length > AppNodeNoteLimits.NodeKeyLength)
+            errors["nodeKey"] = ["この行は名前が長すぎるため設定できません"];
         if (Clean(input.DisplayName)?.Length > AppNodeNoteLimits.DisplayNameLength)
             errors["displayName"] = [$"日本語名は {AppNodeNoteLimits.DisplayNameLength} 文字以内で入力してください"];
         if (Clean(input.Memo)?.Length > AppNodeNoteLimits.MemoLength)
@@ -156,14 +197,31 @@ public static class NodeNoteEndpoints
         return errors.Count > 0 ? errors : null;
     }
 
-    /// <summary>行の情報を保存する（すべて空なら削除）。保存後の情報（削除した場合は null）を返す</summary>
+    /// <summary>
+    /// 行の情報を保存する。日本語名は NameKey（アプリ単位のキー等）、メモ・担当者は NodeKey に保存する
+    /// （別のキーの場合、NodeKey の行の日本語名は外す）。保存後の情報（すべて空の場合は null）を返す
+    /// </summary>
     internal static async Task<NodeNoteDto?> SaveAsync(AppDbContext db, NodeNoteInput input, DateTime now, CancellationToken ct = default)
     {
         var main = Clean(input.MainAssignee);
         var subs = CleanSubs(input.SubAssignees, main);
         var displayName = Clean(input.DisplayName);
         var memo = Clean(input.Memo);
-        var row = await db.AppNodeNotes.Include(n => n.Assignees).FirstOrDefaultAsync(n => n.NodeKey == input.NodeKey, ct);
+        var nodeKey = Clean(input.NodeKey) is null ? null : input.NodeKey;
+        var nameKey = Clean(input.NameKey) is null ? nodeKey : input.NameKey;
+        if (nodeKey is null)
+            return NodeNoteDto.WithName(null, (await UpsertAsync(db, nameKey!, displayName, null, null, [], now, ct))?.DisplayName);
+        if (nameKey == nodeKey) return await UpsertAsync(db, nodeKey, displayName, memo, main, subs, now, ct);
+        var name = await UpsertAsync(db, nameKey!, displayName, null, null, [], now, ct);
+        var note = await UpsertAsync(db, nodeKey, null, memo, main, subs, now, ct);
+        return NodeNoteDto.WithName(note, name?.DisplayName);
+    }
+
+    /// <summary>1 つのキーの情報を保存する（すべて空なら削除）</summary>
+    private static async Task<NodeNoteDto?> UpsertAsync(AppDbContext db, string key, string? displayName, string? memo,
+        AssigneeDto? main, List<AssigneeDto> subs, DateTime now, CancellationToken ct)
+    {
+        var row = await db.AppNodeNotes.Include(n => n.Assignees).FirstOrDefaultAsync(n => n.NodeKey == key, ct);
         if (displayName is null && memo is null && main is null && subs.Count == 0)
         {
             if (row is not null)
@@ -175,7 +233,7 @@ public static class NodeNoteEndpoints
         }
         if (row is null)
         {
-            row = new AppNodeNote { NodeKey = input.NodeKey };
+            row = new AppNodeNote { NodeKey = key };
             db.AppNodeNotes.Add(row);
         }
         row.DisplayName = displayName;

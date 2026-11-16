@@ -73,6 +73,33 @@ public static partial class AppIdentifier
         static string? NullIfEmpty(string s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
     }
 
+    /// <summary>
+    /// 複数のアプリを動かす実行ファイル（下の段のプール・実行元・dll でアプリを区別するもの）。
+    /// 接続アプリ表の日本語名はアプリ単位で共通にするが、これらとその下のプール・実行元は端末ごとの行で設定する。
+    /// </summary>
+    private static readonly HashSet<string> HostExecutables = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "w3wp.exe", "oracle.exe", "dotnet.exe", "java.exe", "javaw.exe",
+    };
+
+    /// <summary>
+    /// 接続アプリ表の行（<see cref="SplitForTree"/> の実行ファイルと下の段）が、日本語名をアプリ単位で共通にするアプリなら、そのアプリ名を返す。
+    /// 端末ごとの行で設定するもの（w3wp.exe・sqlplus.exe 等の実行ファイル、IIS のプール、sqlplus の実行元、不明）は null。
+    /// 例：販売管理.exe → 販売管理.exe、dotnet.exe の下の Api.dll → Api.dll、w3wp.exe の下の JuchuWeb → null
+    /// </summary>
+    public static string? AppUnitName(string exe, string? sub)
+    {
+        var e = exe.Trim();
+        if (e.Length == 0 || e.StartsWith('(')) return null;
+        if (sub is null) return HostExecutables.Contains(e) || LaunchedTools.Contains(e) ? null : e;
+        var s = sub.Trim();
+        // w3wp.exe のプール・sqlplus.exe の実行元は、同じ名前でも端末によって別のアプリのことがある
+        if (s.Length == 0 || s.StartsWith('(') || e.Equals("w3wp.exe", StringComparison.OrdinalIgnoreCase)
+            || e.Equals("oracle.exe", StringComparison.OrdinalIgnoreCase) || LaunchedTools.Contains(e))
+            return null;
+        return s;
+    }
+
     public static (string AppName, string? AppDetail) Identify(ClientProcessInfo? process, string? program, string? module, string? osUser)
     {
         if (process is not null && FromProcess(process) is { } fromProcess)

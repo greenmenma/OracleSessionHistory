@@ -25,6 +25,24 @@ public class AppIdentifierTests
         Assert.Equal((exe, sub), AppIdentifier.SplitForTree(program, appName));
     }
 
+    [Theory]
+    [InlineData("販売管理.exe", null, "販売管理.exe")]
+    [InlineData(" JDBC Thin Client ", null, "JDBC Thin Client")]
+    [InlineData("dotnet.exe", "Api.dll", "Api.dll")]
+    [InlineData("java.exe", "x.jar", "x.jar")]
+    [InlineData("w3wp.exe", null, null)]
+    [InlineData("W3WP.EXE", "JuchuWeb", null)] // プール名は端末ごと
+    [InlineData("sqlplus.exe", null, null)]
+    [InlineData("SQLPLUS.EXE", "月次集計.bat", null)] // 実行元は端末ごと
+    [InlineData("ORACLE.EXE", null, null)]
+    [InlineData("dotnet.exe", null, null)]
+    [InlineData("dotnet.exe", "(区別なし)", null)]
+    [InlineData("(不明)", null, null)]
+    public void 日本語名をアプリ単位で共通にする行(string exe, string? sub, string? expected)
+    {
+        Assert.Equal(expected, AppIdentifier.AppUnitName(exe, sub));
+    }
+
     [Fact]
     public void w3wpはプール名とサイト()
     {

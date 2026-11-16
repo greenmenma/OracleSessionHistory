@@ -185,6 +185,12 @@ button.tree-toggle { background: none; border: none; padding: 0; width: 16px; fl
 button.tree-toggle:hover { color: var(--text); }
 .tree-toggle-space { width: 16px; flex: none; }
 .tree-levels { display: flex; gap: 4px; flex-wrap: wrap; }
+/* 接続アプリ表の端末別・アプリ別の切り替え */
+.view-switch { display: inline-flex; }
+.view-switch button { border-radius: 0; }
+.view-switch button:first-child { border-radius: 6px 0 0 6px; }
+.view-switch button:last-child { border-radius: 0 6px 6px 0; margin-left: -1px; }
+.view-switch button.active { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
 .tree-label { min-width: 120px; max-width: 420px; }
 .tree-name { overflow-wrap: anywhere; }
 .tree-kind { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); }

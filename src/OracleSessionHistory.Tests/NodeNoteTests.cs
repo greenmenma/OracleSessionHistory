@@ -103,6 +103,94 @@ public sealed class NodeNoteTests : IDisposable
         Assert.Null(await NodeNoteEndpoints.SaveAsync(_db, new NodeNoteInput("machine:WEB02", null, null, null, null), Now));
     }
 
+    private static ConnectionCountNode Counted(string kind, string label, int month1, params ConnectionCountNode[] children) =>
+        new(kind, label, null, [], 0, null, 0, 0, 0, 0, 0, 0, 0, month1, 0, [], null, children);
+
+    /// <summary>
+    /// WEB01（販売.exe・w3wp.exe → Foo）、WEB02（販売.exe・w3wp.exe → Foo）、
+    /// DB01（ORACLE.EXE → DB Link 基幹 → PC9 → 販売.exe）
+    /// </summary>
+    private static ConnectionCountNode[] AppTree() =>
+    [
+        Counted("machine", "WEB01", 6, Counted("exe", "販売.exe", 2), Counted("exe", "w3wp.exe", 4, Counted("app", "Foo", 4))),
+        Counted("machine", "WEB02", 1, Counted("exe", "販売.exe", 1)),
+        Counted("machine", "DB01", 3, Counted("exe", "ORACLE.EXE", 3,
+            Counted("dblink", "基幹", 3, Counted("machine", "PC9", 3, Counted("exe", "販売.exe", 3))))),
+        Counted("machine", "WEB03", 5, Counted("exe", "w3wp.exe", 5, Counted("app", "Foo", 5))),
+    ];
+
+    [Fact]
+    public void アプリの行の日本語名はアプリ単位で共通にしプールは端末ごと()
+    {
+        var keyed = ConnectionTreeKeys.Apply(AppTree(), new Dictionary<string, NodeNoteDto>
+        {
+            [ConnectionTreeKeys.AppKeyOf("販売.exe")] = new("販売管理", null, null, []),
+            ["machine:WEB02\nexe:販売.exe"] = new("古い名前", "メモ", Yamada, []),
+            ["machine:WEB01\nexe:w3wp.exe\napp:Foo"] = new("受注", null, null, []),
+        });
+        var hanbai1 = keyed[0].Children[0];
+        Assert.Equal((ConnectionTreeKeys.AppKeyOf("販売.exe"), "machine:WEB01\nexe:販売.exe"), (hanbai1.NameKey, hanbai1.NoteKey));
+        Assert.Equal("販売管理", hanbai1.Note!.DisplayName);
+        // アプリ単位の名前を優先し、行のメモ・担当者はそのまま
+        Assert.Equal(("販売管理", "メモ"), (keyed[1].Children[0].Note!.DisplayName, keyed[1].Children[0].Note!.Memo));
+        // DB Link 接続元のアプリも同じ名前
+        Assert.Equal("販売管理", keyed[2].Children[0].Children[0].Children[0].Children[0].Note!.DisplayName);
+        // w3wp.exe・プールは端末ごと
+        var foo1 = keyed[0].Children[1].Children[0];
+        Assert.Equal(foo1.NoteKey, foo1.NameKey);
+        Assert.Equal("受注", foo1.Note!.DisplayName);
+        Assert.Null(keyed[3].Children[0].Children[0].Note);
+        Assert.Equal(keyed[0].Children[1].Key, keyed[0].Children[1].NameKey);
+    }
+
+    [Fact]
+    public void アプリ別は実行ファイルとプールの下に端末を並べDB_Link経由は接続元の端末にする()
+    {
+        var notes = new Dictionary<string, NodeNoteDto>
+        {
+            [ConnectionTreeKeys.AppKeyOf("販売.exe")] = new("販売管理", null, null, []),
+            ["machine:WEB02\nexe:販売.exe"] = new("古い名前", "メモ", Yamada, []),
+        };
+        var view = ReportEndpoints.ToAppView(ConnectionTreeKeys.Apply(AppTree(), notes), notes);
+        Assert.Equal("w3wp.exe(Foo(WEB03,WEB01)),販売.exe(PC9,WEB01,WEB02)", Labels(view));
+
+        var hanbai = view[1];
+        Assert.Equal((6, "販売管理", ConnectionTreeKeys.AppKeyOf("販売.exe")), (hanbai.Month1, hanbai.Note!.DisplayName, hanbai.NameKey));
+        Assert.Null(hanbai.NoteKey); // アプリの行にはメモ・担当者を設定しない
+        Assert.Equal("DB Link 基幹（DB01）経由", hanbai.Children[0].Detail);
+        // 端末の行は端末別の最下段と同じキー。アプリ単位の日本語名は端末の行では設定しない
+        var web02 = hanbai.Children[2];
+        Assert.Equal(("machine:WEB02\nexe:販売.exe", null, "メモ"), (web02.NoteKey, web02.NameKey, web02.Note!.Memo));
+        Assert.Null(web02.Note.DisplayName);
+        // w3wp.exe はアプリ単位の名前を付けず、プールの下の端末で設定する
+        Assert.Null(view[0].NameKey);
+        Assert.Null(view[0].Children[0].NameKey);
+        Assert.Equal("machine:WEB03\nexe:w3wp.exe\napp:Foo", view[0].Children[0].Children[0].NameKey);
+        Assert.Equal(9, view[0].Month1);
+    }
+
+    [Fact]
+    public async Task 日本語名をアプリ単位のキーに保存し行の日本語名は外す()
+    {
+        _db.Database.Migrate();
+        var appKey = ConnectionTreeKeys.AppKeyOf("販売.exe");
+        await NodeNoteEndpoints.SaveAsync(_db, new NodeNoteInput("machine:WEB02\nexe:販売.exe", "古い名前", "メモ", Yamada, []), Now);
+
+        var saved = await NodeNoteEndpoints.SaveAsync(_db, new NodeNoteInput("machine:WEB02\nexe:販売.exe", "販売管理", "メモ", Yamada, [], appKey), Now);
+        Assert.Equal(("販売管理", "メモ"), (saved!.DisplayName, saved.Memo));
+        var rows = _db.AppNodeNotes.AsNoTracking().OrderBy(n => n.NodeKey).ToList();
+        Assert.Equal([(appKey, "販売管理", (string?)null), ("machine:WEB02\nexe:販売.exe", null, "メモ")],
+            rows.Select(r => (r.NodeKey, r.DisplayName, r.Memo)).OrderBy(r => r.NodeKey, StringComparer.Ordinal));
+
+        // アプリ別のアプリの行から：日本語名だけを保存する
+        saved = await NodeNoteEndpoints.SaveAsync(_db, new NodeNoteInput(null, "販売システム", null, null, null, appKey), Now);
+        Assert.Equal("販売システム", saved!.DisplayName);
+        Assert.Null(await NodeNoteEndpoints.SaveAsync(_db, new NodeNoteInput(null, " ", null, null, null, appKey), Now));
+        Assert.Equal(["machine:WEB02\nexe:販売.exe"], _db.AppNodeNotes.AsNoTracking().Select(n => n.NodeKey).ToList());
+        Assert.NotNull(NodeNoteEndpoints.Validate(new NodeNoteInput(null, "x", null, null, null)));
+        Assert.Null(NodeNoteEndpoints.Validate(new NodeNoteInput(null, "x", null, null, null, appKey)));
+    }
+
     [Fact]
     public void 長すぎる値や多すぎるサブの担当者は保存しない()
     {
