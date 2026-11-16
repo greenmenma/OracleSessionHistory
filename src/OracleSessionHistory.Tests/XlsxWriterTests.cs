@@ -93,4 +93,44 @@ public class XlsxWriterTests
         Assert.Equal("WEB01 → 販売.exe", machines[2][^1]); // 経路（端末の件数の出典は端末の行だけ）
         Assert.Equal("履歴の件数", machines[1][^1]);
     }
+
+    [Theory]
+    [InlineData(0, "1分未満")]
+    [InlineData(59, "59分")]
+    [InlineData(135, "2時間15分")]
+    [InlineData(60 * 26, "1日2時間")]
+    public void 接続時間は画面と同じ表記(int minutes, string expected)
+    {
+        var from = new DateTime(2026, 11, 16, 9, 0, 0);
+        Assert.Equal(expected, SessionExport.Duration(from, from.AddMinutes(minutes)));
+    }
+
+    [Fact]
+    public void セッション履歴を一覧と検索条件のシートにする()
+    {
+        var logon = new DateTime(2026, 11, 16, 9, 0, 0);
+        var session = new SessionListItem(10, 1, "本番DB", 1, 123, 45, logon, "SALES", "SALES", "yamada", "PC01", "販売.exe", "MOD",
+            "INACTIVE", "DbLinkSuspect", null, false, logon, logon.AddMinutes(30), logon.AddMinutes(30), true, 0,
+            "販売.exe", @"D:\app", "CORP\\yamada", "Resolved", null, LinkOriginApp: "在庫照会.exe", LinkOriginMachine: "AP02");
+        var result = new OracleSessionHistory.Server.Support.PagedResult<SessionRow>(
+            [new SessionRow("session", "本番DB", logon, session, null)], 60_000, 1, SessionExport.MaxRows);
+        var search = new SessionSearch(null, "disconnected", "販売", null, null, null, null, null, null, null, Exact: true);
+        var bytes = SessionExport.Create(result, search, null, new Dictionary<string, string> { ["CORP\\YAMADA"] = "山田 太郎" }, logon.AddHours(1));
+
+        var rows = ReadSheet(bytes, 1);
+        Assert.Equal(["行の種類", "状態", "監視対象"], rows[0].Take(3));
+        Assert.Equal(["セッション", "切断", "本番DB"], rows[1].Take(3));
+        Assert.Equal(["切断（推定）", logon.AddMinutes(30).ToOADate().ToString(System.Globalization.CultureInfo.InvariantCulture), "30分", "PC01", "販売.exe"],
+            rows[1].Skip(4).Take(5));
+        Assert.Equal(["在庫照会.exe", "AP02", "", "山田 太郎（CORP\\yamada）"], rows[1].Skip(10).Take(4));
+        Assert.Equal("DB Linkの可能性", rows[1][18]);
+
+        var conditions = ReadSheet(bytes, 2).ToDictionary(r => r[0], r => r.ElementAtOrDefault(1) ?? "");
+        Assert.Equal("すべて", conditions["監視対象"]);
+        Assert.Equal("切断済み", conditions["状態"]);
+        Assert.Equal("販売", conditions["キーワード"]);
+        Assert.Equal("完全一致", conditions["端末・アプリ"]);
+        Assert.Equal("60000", conditions["該当件数"]);
+        Assert.Contains("50,000", conditions["注意"]);
+    }
 }

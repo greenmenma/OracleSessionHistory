@@ -444,6 +444,26 @@ public sealed class ApiQueryTests : IDisposable
     }
 
     [Fact]
+    public async Task Excel出力は画面の上限を超えて読み1000件ごとに分けて取得する()
+    {
+        for (var i = 0; i < 1203; i++)
+            _db.Sessions.Add(new TrackedSession
+            {
+                TargetId = _targetId, InstId = 1, Sid = ++_sid, Serial = 1, LogonTime = Today.AddSeconds(i), Machine = "WEB01",
+                Program = "w3wp.exe", AppName = "IIS: Foo", ProcessKind = ProcessKinds.Client, FirstSeenAt = Today, LastSeenAt = Today,
+            });
+        _db.SaveChanges();
+        var s = new SessionSearch(null, null, null, null, null, null, null, null, null, null, PageSize: SessionExport.MaxRows);
+
+        // 画面は 1 ページ 500 件まで
+        Assert.Equal(500, (await SessionEndpoints.QueryRowsAsync(_db, s)).Items.Count);
+        var all = await SessionEndpoints.QueryRowsAsync(_db, s, SessionExport.MaxRows);
+        Assert.Equal((1203, 1203), (all.Total, all.Items.Count));
+        Assert.Equal(Today.AddSeconds(1202), all.Items[0].LogonTime); // ログオンが新しい順
+        Assert.Equal(all.Items.Count, all.Items.Select(r => r.Session!.Id).Distinct().Count());
+    }
+
+    [Fact]
     public void すべてを表示する場合はセッションだけの条件でDB_Link利用元を除く()
     {
         Assert.False(SessionEndpoints.HasSessionOnlyCondition(new SessionSearch(null, null, "x", "AP01", null, "u", "o", null, null, null, App: "a", Exact: true)));

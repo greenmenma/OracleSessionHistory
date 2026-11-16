@@ -404,6 +404,8 @@ export const api = {
   summary: (targetId?: number) => request<Summary>('GET', `api/summary${qs({ targetId })}`),
   sessions: (params: Record<string, string | number | boolean | undefined>) =>
     request<Paged<SessionRow>>('GET', `api/sessions${qs(params)}`),
+  /** セッション履歴の Excel 出力の URL（相対パス。検索条件は一覧と同じ。page・pageSize は使わない） */
+  sessionsExportUrl: (params: Record<string, string | number | boolean | undefined>) => `api/sessions/export${qs(params)}`,
   session: (id: number) => request<SessionDetail>('GET', `api/sessions/${id}`),
   /** 実行ユーザの表示名（アカウントを大文字にした値 → AD の displayName） */
   userNames: () => request<Record<string, string>>('GET', 'api/user-names'),

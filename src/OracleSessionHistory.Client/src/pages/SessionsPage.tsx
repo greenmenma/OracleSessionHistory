@@ -124,20 +124,19 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
     setPage(1)
   }, [queryKey])
 
+  // 検索条件（一覧と Excel 出力で共通）
+  const searchParams = {
+    targetId,
+    ...filters,
+    from: filters.from || undefined,
+    to: filters.to || undefined,
+    includeInternal: filters.includeInternal || undefined,
+    exact: filters.exact || undefined,
+    exe: undefined,
+    program: filters.exe || undefined,
+  }
   const { data, error, loading } = useAsync(
-    () =>
-      api.sessions({
-        targetId,
-        ...filters,
-        from: filters.from || undefined,
-        to: filters.to || undefined,
-        includeInternal: filters.includeInternal || undefined,
-        exact: filters.exact || undefined,
-        exe: undefined,
-        program: filters.exe || undefined,
-        page,
-        pageSize: 50,
-      }),
+    () => api.sessions({ ...searchParams, page, pageSize: 50 }),
     [targetId, JSON.stringify(filters), page],
     autoRefresh ? 10000 : undefined,
   )
@@ -282,7 +281,17 @@ export default function SessionsPage({ targetId, query }: { targetId?: number; q
             {data ? `${data.total.toLocaleString()} 件` : loading ? '読み込み中…' : ''}
             <span className="muted">（ログオンが新しい順）</span>
           </span>
-          {data && <Pager page={data.page} pageSize={data.pageSize} total={data.total} onChange={setPage} />}
+          <span className="table-head-actions">
+            {data && <Pager page={data.page} pageSize={data.pageSize} total={data.total} onChange={setPage} />}
+            <a
+              className="button-link small"
+              href={api.sessionsExportUrl(searchParams)}
+              download
+              title="検索条件に一致するセッション履歴（ログオンが新しい順に最大 50,000 件）を Excel（.xlsx）で保存。検索条件のシートも付けます"
+            >
+              Excel 出力
+            </a>
+          </span>
         </div>
         <div className="table-wrap">
           <table className="hover">

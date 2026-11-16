@@ -203,6 +203,7 @@ a.button-link {
 }
 a.button-link:hover { border-color: var(--primary); }
 a.button-link.small { padding: 2px 8px; font-size: 12px; }
+.table-head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tree-label { min-width: 120px; max-width: 420px; }
 .tree-name { overflow-wrap: anywhere; }
 .tree-kind { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); }
