@@ -39,7 +39,7 @@ public static class XlsxWriter
             Entry(zip, "[Content_Types].xml", ContentTypes(sheets.Count));
             Entry(zip, "_rels/.rels",
                 """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>""");
-            Entry(zip, "xl/workbook.xml", Workbook(names));
+            Entry(zip, "xl/workbook.xml", Workbook(names, sheets));
             Entry(zip, "xl/_rels/workbook.xml.rels", WorkbookRels(sheets.Count));
             Entry(zip, "xl/styles.xml", Styles());
             for (var i = 0; i < sheets.Count; i++) Entry(zip, $"xl/worksheets/sheet{i + 1}.xml", Sheet(sheets[i]));
@@ -83,12 +83,22 @@ public static class XlsxWriter
         return sb.Append("</Types>").ToString();
     }
 
-    private static string Workbook(IReadOnlyList<string> names)
+    private static string Workbook(IReadOnlyList<string> names, IReadOnlyList<XlsxSheet> sheets)
     {
         var sb = new StringBuilder(
             """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>""");
         for (var i = 0; i < names.Count; i++) sb.Append($"""<sheet name="{Escape(names[i])}" sheetId="{i + 1}" r:id="rId{i + 1}"/>""");
-        return sb.Append("</sheets></workbook>").ToString();
+        sb.Append("</sheets>");
+        // オートフィルターの範囲は、Excel が自身で保存するときと同じく非表示の名前（_FilterDatabase）でも定義する
+        var filters = sheets.Select((sh, i) => (Index: i, Columns: ColumnCount(sh), Rows: sh.Rows.Count)).Where(x => x.Columns > 0).ToList();
+        if (filters.Count > 0)
+        {
+            sb.Append("<definedNames>");
+            foreach (var (i, columns, rows) in filters)
+                sb.Append($"""<definedName name="_xlnm._FilterDatabase" localSheetId="{i}" hidden="1">{Escape($"'{names[i].Replace("'", "''")}'")}!$A$1:${Column(columns - 1)}${rows + 1}</definedName>""");
+            sb.Append("</definedNames>");
+        }
+        return sb.Append("</workbook>").ToString();
     }
 
     private static string WorkbookRels(int count)
@@ -123,7 +133,7 @@ public static class XlsxWriter
 
     private static string Sheet(XlsxSheet sheet)
     {
-        var columns = Math.Max(sheet.Header.Count, sheet.Rows.Count == 0 ? 0 : sheet.Rows.Max(r => r.Count));
+        var columns = ColumnCount(sheet);
         var sb = new StringBuilder(
             """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">""");
         // 見出しの行を固定する
@@ -145,6 +155,8 @@ public static class XlsxWriter
         if (columns > 0) sb.Append($"""<autoFilter ref="A1:{Column(columns - 1)}{sheet.Rows.Count + 1}"/>""");
         return sb.Append("</worksheet>").ToString();
     }
+
+    private static int ColumnCount(XlsxSheet sheet) => Math.Max(sheet.Header.Count, sheet.Rows.Count == 0 ? 0 : sheet.Rows.Max(r => r.Count));
 
     private static void Row(StringBuilder sb, int row, IReadOnlyList<object?> cells, bool header)
     {
@@ -185,11 +197,29 @@ public static class XlsxWriter
         return name;
     }
 
-    /// <summary>XML の特殊文字をエスケープし、XML で使えない制御文字を除く。Excel のセルの上限（32767 文字）で切る</summary>
-    private static string Escape(string s)
+    /// <summary>
+    /// XML の特殊文字をエスケープし、XML で使えない文字（制御文字・U+FFFE/U+FFFF・対になっていないサロゲート）を除く。
+    /// Excel のセルの上限（32767 文字）で切る（サロゲートペアの途中では切らない）
+    /// </summary>
+    internal static string Escape(string s)
     {
-        var clean = new string(s.Where(c => c is '\t' or '\n' or '\r' || c >= ' ' && c != '￾' && c != '￿').ToArray());
-        if (clean.Length > 32767) clean = clean[..32767];
-        return SecurityElement.Escape(clean);
+        var sb = new StringBuilder(Math.Min(s.Length, MaxCellLength));
+        for (var i = 0; i < s.Length && sb.Length < MaxCellLength; i++)
+        {
+            var c = s[i];
+            if (char.IsHighSurrogate(c))
+            {
+                if (i + 1 >= s.Length || !char.IsLowSurrogate(s[i + 1])) continue; // 対になっていない
+                if (sb.Length + 2 > MaxCellLength) break;
+                sb.Append(c).Append(s[++i]);
+                continue;
+            }
+            if (char.IsLowSurrogate(c) || c is '￾' or '￿' || (c < ' ' && c is not ('\t' or '\n' or '\r'))) continue;
+            sb.Append(c);
+        }
+        return SecurityElement.Escape(sb.ToString());
     }
+
+    /// <summary>Excel のセルの最大文字数</summary>
+    private const int MaxCellLength = 32767;
 }

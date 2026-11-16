@@ -92,7 +92,8 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
   const [assignee, setAssignee] = useState('')
   const [view, setView] = useState<ConnectionView>(loadView)
   const { data, error, loading, reload } = useAsync(
-    () => api.connectionCounts(targetId, q, assignee || undefined, view),
+    // 取得したときの表示を一緒に持つ（切り替え直後に前の表示のデータを新しい表示の形で描かないように）
+    () => api.connectionCounts(targetId, q, assignee || undefined, view).then((d) => ({ ...d, view })),
     [targetId, q, assignee, view],
     60000,
   )
@@ -105,7 +106,8 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
   // 縮小している行のキー（既定は全展開）
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
 
-  const nodes = data?.nodes ?? []
+  const current = data?.view === view ? data : undefined
+  const nodes = current?.nodes ?? []
   const totals = columns.map((c) => nodes.reduce((a, n) => a + n[c.key], 0))
   const max = Math.max(1, ...(flat ? nodes : leaves(nodes)).flatMap((n) => columns.slice(0, 7).map((c) => n[c.key])))
   // アプリ別は監査証跡の件数を使わない
@@ -117,6 +119,7 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
 
   const changeView = (v: ConnectionView) => {
     setView(v)
+    setPathsOf(undefined)
     saveView(v)
   }
 
@@ -298,7 +301,7 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
       <section className="card counts-card">
         <div className="table-head">
           <span>
-            {data ? `${nodes.length} ${view === 'app' ? 'アプリ' : '端末'}` : loading ? '読み込み中…' : ''}
+            {current ? `${nodes.length} ${view === 'app' ? 'アプリ' : '端末'}` : loading || data ? '読み込み中…' : ''}
             {assignee && (
               <span className="muted">
                 （担当者 {assignee === UNASSIGNED ? '未設定' : (names.find((a) => a.account === assignee)?.displayName ?? assignee)} の{view === 'app' ? '' : '行と、'}{view === 'app' ? '経路を含むアプリ。合計は表示しているアプリの件数）' : 'その上の段。合計は表示している端末の件数）'}
@@ -356,7 +359,7 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
             </thead>
             <tbody>
               {nodes.map((n, i) => renderNode(n, [], i === nodes.length - 1))}
-              {data && nodes.length === 0 && (
+              {current && nodes.length === 0 && (
                 <tr>
                   <td colSpan={columnCount} className="empty">
                     データがありません

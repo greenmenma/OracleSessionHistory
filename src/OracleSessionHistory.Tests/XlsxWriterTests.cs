@@ -66,6 +66,24 @@ public class XlsxWriterTests
         Assert.Equal(["下の段", "", "1.5"], rows[2]);
     }
 
+    [Fact]
+    public void 対になっていないサロゲートと制御文字は除きサロゲートペアは残す()
+    {
+        Assert.Equal("a𠮷b&amp;", XlsxWriter.Escape("a𠮷b\uDFFF\u0007&\uD800"));
+        // 上限で切るときもサロゲートペアの途中で切らない
+        Assert.Equal(32766, XlsxWriter.Escape(new string('x', 32766) + "𠮷").Length);
+        Assert.Equal(32767, XlsxWriter.Escape(new string('x', 40000)).Length);
+    }
+
+    [Fact]
+    public void オートフィルターの範囲を定義名にも書く()
+    {
+        var bytes = XlsxWriter.Write([new("O'Brien", ["a", "b"], [["1", "2"], ["3"]])]);
+        using var zip = new ZipArchive(new MemoryStream(bytes));
+        using var reader = new StreamReader(zip.GetEntry("xl/workbook.xml")!.Open());
+        Assert.Contains("""<definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">&apos;O&apos;&apos;Brien&apos;!$A$1:$B$3</definedName>""", reader.ReadToEnd());
+    }
+
     private static ConnectionCountNode Node(string kind, string label, int month1, params ConnectionCountNode[] children) =>
         new(kind, label, null, ["CORP\\yamada"], 1, new DateTime(2026, 11, 16, 9, 0, 0), 0, 0, 0, 0, 0, 0, 0, month1, 0, [], null, children);
 
