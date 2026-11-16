@@ -25,13 +25,15 @@ public sealed record NameCount(string Name, int Count);
 /// <param name="AuditPeriods">監査証跡の件数を使った列（端末の行のみ。today・d1〜d6・month1・month2）</param>
 /// <param name="Open">クリックで開くセッション履歴の検索条件（null は開かない）</param>
 /// <param name="Owners">実行ユーザ（ログオンの多い順。DB Link 経由は接続元の実行ユーザ）</param>
-/// <param name="Key">行のキー（対応担当者の保存に使う。<see cref="ConnectionTreeKeys"/>）</param>
+/// <param name="Key">行のキー（画面での展開・縮小に使う。端末別は上の段からの経路。<see cref="ConnectionTreeKeys"/>）</param>
 /// <param name="Note">画面から設定した日本語名・メモ・対応担当者（未設定は null）</param>
+/// <param name="NoteKey">メモ・対応担当者を保存するキー（端末別の経路。null はこの行では設定しない）</param>
+/// <param name="NameKey">日本語名を保存するキー（アプリの行はアプリ単位のキー、それ以外は <paramref name="NoteKey"/>。null はこの行では設定しない）</param>
 public sealed record ConnectionCountNode(
     string Kind, string Label, string? Detail, IReadOnlyList<string> Owners, int Connected, DateTime? LastSeenAt,
     int Today, int D1, int D2, int D3, int D4, int D5, int D6, int Month1, int Month2,
     IReadOnlyList<string> AuditPeriods, IReadOnlyDictionary<string, string>? Open, IReadOnlyList<ConnectionCountNode> Children,
-    string Key = "", NodeNoteDto? Note = null);
+    string Key = "", NodeNoteDto? Note = null, string? NoteKey = null, string? NameKey = null);
 
 /// <summary>監視対象ごとの監査証跡の取得状況（接続アプリ表の注記用）。From〜LastDay（両端を含む）の端末の件数は監査の件数</summary>
 public sealed record AuditCoverage(string TargetName, DateTime? From, DateTime? LastDay, DateTime? FetchedAt, string? Error);
@@ -48,6 +50,12 @@ public static class ConnectionCountKinds
 /// <summary>サマリー・接続数表の API</summary>
 public static class ReportEndpoints
 {
+    /// <summary>接続アプリ表のアプリ別の表示（<c>view=app</c>）</summary>
+    public const string AppView = "app";
+
+    /// <summary>アプリ別の行のキー（展開・縮小用）の接頭辞</summary>
+    private const string AppViewKeyPrefix = "byapp:";
+
     public static void MapReportEndpoints(this IEndpointRouteBuilder app)
     {
         var g = app.MapGroup("/api");
@@ -101,13 +109,16 @@ public static class ReportEndpoints
 
         // 接続アプリ表：実行端末 × アプリごとの日単位の接続回数（ログオン時刻で集計）
         // assignee：担当者（AD のアカウント）で絞り込む（ConnectionTreeKeys.Unassigned は担当者が決まっていない行）
-        g.MapGet("/connection-counts", async (int? targetId, string? q, string? assignee, AppDbContext db, CancellationToken ct) =>
+        // view：app はアプリ別（実行ファイル → プール・実行元 → 端末）。それ以外は端末別
+        g.MapGet("/connection-counts", async (int? targetId, string? q, string? assignee, string? view, AppDbContext db, CancellationToken ct) =>
         {
             var b = Buckets.Create(DateTime.Today);
             var (tree, audit) = await QueryConnectionTreeAsync(db, targetId, q, b.Today, ct);
             var notes = (await db.AppNodeNotes.AsNoTracking().Include(n => n.Assignees).ToListAsync(ct))
                 .ToDictionary(n => n.NodeKey, NodeNoteDto.From);
             var nodes = ConnectionTreeKeys.FilterByAssignee(ConnectionTreeKeys.Apply(tree, notes), assignee);
+            // アプリ別は、端末別の木（担当者で絞り込んだもの）の最下段を並べ替えて作る
+            if (view == AppView) nodes = ToAppView(nodes, notes);
             return new
             {
                 periods = new
@@ -282,6 +293,104 @@ public static class ReportEndpoints
             list.Add(Node(ConnectionCountKinds.Exe, g.Key, null, all, open, Sort(children)));
         }
         return Sort(list);
+    }
+
+    /// <summary>端末別の木の最下段（アプリ別の端末の行になる）</summary>
+    private sealed record AppLeaf(string Exe, string? Sub, string SubKind, string Terminal, string? Via, ConnectionCountNode Node);
+
+    /// <summary>
+    /// 端末別の木（キー・情報を付けたもの）をアプリ別にする：実行ファイル → プール・実行元・dll → 端末。
+    /// DB Link 経由は接続元のアプリ・接続元の端末にまとめる。件数はすべて履歴の件数（監査証跡はアプリを区別できない）。
+    /// 端末の行は端末別の最下段の行と同じもの（メモ・担当者は同じキー）。アプリの行の日本語名はアプリ単位のキー
+    /// </summary>
+    internal static List<ConnectionCountNode> ToAppView(IReadOnlyList<ConnectionCountNode> tree, IReadOnlyDictionary<string, NodeNoteDto> notes)
+    {
+        var leaves = new List<AppLeaf>();
+        void Walk(ConnectionCountNode n, string root, string? terminal, string? exe, string? link)
+        {
+            if (n.Children.Count > 0)
+            {
+                foreach (var c in n.Children)
+                    Walk(c, root, n.Kind == ConnectionCountKinds.Machine ? n.Label : terminal, n.Kind == ConnectionCountKinds.Exe ? n.Label : exe,
+                        n.Kind == ConnectionCountKinds.DbLink ? n.Label : link);
+                return;
+            }
+            var via = link is null ? null : $"DB Link {link}（{root}）経由";
+            if (n.Kind == ConnectionCountKinds.Exe) leaves.Add(new(n.Label, null, ConnectionCountKinds.App, terminal ?? root, via, n));
+            else if (n.Kind is ConnectionCountKinds.App or ConnectionCountKinds.Other && exe is not null)
+                leaves.Add(new(exe, n.Label, n.Kind, terminal ?? root, via, n));
+            // アプリの無い端末（監査証跡の件数だけの端末）・接続元の端末が無い DB Link は表示しない
+        }
+        foreach (var m in tree) Walk(m, m.Label, null, null, null);
+
+        var list = new List<ConnectionCountNode>();
+        foreach (var e in leaves.GroupBy(l => l.Exe, StringComparer.OrdinalIgnoreCase))
+        {
+            var exe = e.First().Exe;
+            var exeKey = AppViewKeyPrefix + exe.ToUpperInvariant();
+            if (e.All(l => l.Sub is null))
+            {
+                list.Add(Group(ConnectionCountKinds.Exe, exe, exeKey, AppKeyOf(exe, null), e.ToList(),
+                    Open(("app", exe), ("exact", "true"))));
+                continue;
+            }
+            var children = new List<ConnectionCountNode>();
+            foreach (var s in e.GroupBy(l => l.Sub ?? RestLabel(exe), StringComparer.OrdinalIgnoreCase))
+            {
+                var sub = s.ToList();
+                var rest = s.All(l => l.Sub is null || l.SubKind == ConnectionCountKinds.Other);
+                var app = sub.Select(l => l.Node.Open?.GetValueOrDefault("app")).FirstOrDefault(a => a is not null) ?? exe;
+                children.Add(Group(rest ? ConnectionCountKinds.Other : ConnectionCountKinds.App, s.Key, $"{exeKey}{ConnectionTreeKeys.Separator}{s.Key.ToUpperInvariant()}",
+                    rest ? null : AppKeyOf(exe, s.Key), sub,
+                    Open(("app", app), ("exact", "true"))));
+            }
+            var exeOpen = exe.Equals("w3wp.exe", StringComparison.OrdinalIgnoreCase) ? Open(("app", "IIS: "))
+                : AppIdentifier.LaunchedTools.Contains(exe) ? Open(("app", exe + ": "))
+                : Open(("exe", exe));
+            list.Add(GroupOf(ConnectionCountKinds.Exe, exe, exeKey, null, Sort(children), exeOpen, notes));
+        }
+        return Sort(list);
+
+        static string? AppKeyOf(string exe, string? sub) =>
+            AppIdentifier.AppUnitName(exe, sub) is { } app ? ConnectionTreeKeys.AppKeyOf(app) : null;
+
+        ConnectionCountNode Group(string kind, string label, string key, string? nameKey, List<AppLeaf> rows, IReadOnlyDictionary<string, string> open)
+        {
+            var terminals = rows.Select(l =>
+            {
+                var leaf = l.Node;
+                // アプリ単位の日本語名はアプリの行に出す（端末の行では設定しない）
+                var shared = leaf.NameKey != leaf.NoteKey;
+                var note = shared ? NodeNoteDto.WithName(notes.GetValueOrDefault(leaf.Key), null) : leaf.Note;
+                return leaf with
+                {
+                    Kind = ConnectionCountKinds.Machine, Label = l.Terminal, Detail = l.Via ?? leaf.Detail, AuditPeriods = [],
+                    Note = note, NameKey = shared ? null : leaf.NameKey,
+                };
+            });
+            // 日本語名：アプリ単位で設定したもの、無ければ端末別の行に設定していたもの（アプリ単位にする前の設定）
+            var node = GroupOf(kind, label, key, nameKey, Sort(terminals), open, notes);
+            return nameKey is null || node.Note is not null ? node
+                : node with { Note = NodeNoteDto.WithName(null, rows.Select(l => l.Node.Note?.DisplayName).FirstOrDefault(d => d is not null)) };
+        }
+    }
+
+    /// <summary>アプリ別の、下の段をまとめた行（件数は下の段の合計。メモ・担当者は設定しない）</summary>
+    private static ConnectionCountNode GroupOf(string kind, string label, string key, string? nameKey, List<ConnectionCountNode> children,
+        IReadOnlyDictionary<string, string>? open, IReadOnlyDictionary<string, NodeNoteDto> notes)
+    {
+        var v = new int[9];
+        foreach (var c in children)
+        {
+            int[] counts = [c.Today, c.D1, c.D2, c.D3, c.D4, c.D5, c.D6, c.Month1, c.Month2];
+            for (var i = 0; i < v.Length; i++) v[i] += counts[i];
+        }
+        // 実行ユーザ：下の段の実行ユーザを、件数の多い行の順に重複を除いて並べる
+        var owners = children.OrderByDescending(c => c.Month1 + c.Month2).SelectMany(c => c.Owners)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return new ConnectionCountNode(kind, label, null, owners, children.Sum(c => c.Connected), children.Max(c => c.LastSeenAt),
+            v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], [], open, children,
+            key, nameKey is null ? null : NodeNoteDto.WithName(null, notes.GetValueOrDefault(nameKey)?.DisplayName), null, nameKey);
     }
 
     private static IReadOnlyDictionary<string, string> With(IReadOnlyDictionary<string, string> open, params (string Key, string Value)[] extra) =>

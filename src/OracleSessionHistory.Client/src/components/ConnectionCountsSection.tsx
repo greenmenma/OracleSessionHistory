@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { api, UNASSIGNED, type Assignee, type ConnectionCountNode, type PeriodCounts } from '../api'
+import { api, UNASSIGNED, type Assignee, type ConnectionCountNode, type ConnectionView, type PeriodCounts } from '../api'
 import { useAsync } from '../hooks'
 import { fmtDate, fmtDateTime } from '../format'
 import { navigate } from '../router'
@@ -27,11 +27,36 @@ const columnCount = leadColumns + columns.length + 1
 const auditTitle = 'DBA_AUDIT_SESSION（監査証跡）のログオン件数'
 const historyTitle = 'このシステムが取得したセッション数（監査証跡の件数が無い期間・絞り込みで端末名が一致しない端末）'
 
-const description =
+const machineDescription =
   '実行端末 → 実行ファイル → IIS のプール・sqlplus の実行元の順に、ログオン回数を表示します。' +
   '端末の行は DBA_AUDIT_SESSION（監査証跡）のログオン件数、下の段はこのシステムが取得したセッション数です（短いセッションは取りこぼすため、端末の行より少なくなることがあります）。' +
   'DB Link 経由の接続は、DB サーバーの ORACLE.EXE の下に DB Link 接続元 → 接続元の端末 → 接続元のアプリで表示します。' +
-  'Oracle 内部プロセス（ジョブ等）は含みません。▾ / ▸ で展開・縮小（Shift+クリックで下の段もまとめて）、右上のボタンで段ごとに展開・縮小できます。✎ または担当者の欄をクリックすると、日本語名・メモ・担当者（メイン・サブ）を設定できます'
+  'Oracle 内部プロセス（ジョブ等）は含みません。▾ / ▸ で展開・縮小（Shift+クリックで下の段もまとめて）、右上のボタンで段ごとに展開・縮小できます。✎ または担当者の欄をクリックすると、日本語名・メモ・担当者（メイン・サブ）を設定できます。' +
+  'アプリの行（w3wp.exe・sqlplus.exe 等とプール・実行元を除く）の日本語名はアプリ単位で、どの端末の行でも同じ名前になります'
+
+const appDescription =
+  '実行ファイル → IIS のプール・sqlplus の実行元・dll → 実行端末の順に、ログオン回数を表示します（件数はすべてこのシステムが取得したセッション数）。' +
+  'DB Link 経由の接続は、接続元のアプリ・接続元の端末にまとめます。Oracle 内部プロセス（ジョブ等）は含みません。' +
+  'アプリの行の ✎ で日本語名（アプリ単位で共通）を、端末の行の ✎ または担当者の欄でメモ・担当者（端末別の最下段の行と共通）を設定できます'
+
+/** 表示の切り替えをブラウザに保存するキー */
+const viewStorageKey = 'connection-counts-view'
+
+function loadView(): ConnectionView {
+  try {
+    return localStorage.getItem(viewStorageKey) === 'app' ? 'app' : 'machine'
+  } catch {
+    return 'machine'
+  }
+}
+
+function saveView(v: ConnectionView) {
+  try {
+    localStorage.setItem(viewStorageKey, v)
+  } catch {
+    // 保存できなくても表示は切り替える
+  }
+}
 
 /** 下の段の無い行（日別の列に件数の背景色を付ける） */
 function leaves(nodes: ConnectionCountNode[]): ConnectionCountNode[] {
@@ -44,16 +69,27 @@ function branches(nodes: ConnectionCountNode[], depth = 0): { key: string; depth
 }
 
 /** 段の名前（展開ボタンの説明） */
-const levelNames = ['端末', '実行ファイル', 'プール・実行元・DB Link', '接続元の端末', '接続元の実行ファイル', '接続元のプール・実行元']
+const levelNames: Record<ConnectionView, string[]> = {
+  machine: ['端末', '実行ファイル', 'プール・実行元・DB Link', '接続元の端末', '接続元の実行ファイル', '接続元のプール・実行元'],
+  app: ['実行ファイル', 'プール・実行元・dll', '端末'],
+}
+
+/** 行の ✎ の説明 */
+function editTitle(n: ConnectionCountNode): string {
+  if (!n.noteKey) return '日本語名（アプリ単位で共通）を設定'
+  if (!n.nameKey) return 'メモ・担当者を設定（日本語名はアプリの行で設定）'
+  return n.nameKey !== n.noteKey ? '日本語名（アプリ単位で共通）・メモ・担当者を設定' : '日本語名・メモ・担当者を設定'
+}
 
 /** 接続アプリ表（サマリーのメイン。表の中でスクロールし、見出し・合計・スクロールバーは常に見える） */
 export default function ConnectionCountsSection({ targetId }: { targetId?: number }) {
   const [input, setInput] = useState('')
   const [q, setQ] = useState('')
   const [assignee, setAssignee] = useState('')
+  const [view, setView] = useState<ConnectionView>(loadView)
   const { data, error, loading, reload } = useAsync(
-    () => api.connectionCounts(targetId, q, assignee || undefined),
-    [targetId, q, assignee],
+    () => api.connectionCounts(targetId, q, assignee || undefined, view),
+    [targetId, q, assignee, view],
     60000,
   )
   const suggestions = useAsync(() => api.assignees(), [], undefined)
@@ -64,10 +100,16 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
   const nodes = data?.nodes ?? []
   const totals = columns.map((c) => nodes.reduce((a, n) => a + n[c.key], 0))
   const max = Math.max(1, ...leaves(nodes).flatMap((n) => columns.slice(0, 7).map((c) => n[c.key])))
-  const audits = data?.audit ?? []
+  // アプリ別は監査証跡の件数を使わない
+  const audits = view === 'machine' ? (data?.audit ?? []) : []
   const names = suggestions.data ?? []
   const allBranches = branches(nodes)
   const levels = allBranches.length === 0 ? 0 : Math.max(...allBranches.map((b) => b.depth)) + 1
+
+  const changeView = (v: ConnectionView) => {
+    setView(v)
+    saveView(v)
+  }
 
   /** level 段目まで表示する（それより下の段を持つ行を縮小する。0 は端末だけ） */
   const showLevel = (level: number) => setCollapsed(new Set(allBranches.filter((b) => b.depth >= level).map((b) => b.key)))
@@ -117,9 +159,11 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
               <span className={`tree-name ${n.note?.displayName ? 'sub-name' : ''}`} title={n.label}>
                 {n.label}
               </span>
-              <button type="button" className="note-edit" onClick={() => setEditing(n)} title="日本語名・メモ・担当者を設定">
-                ✎
-              </button>
+              {(n.nameKey || n.noteKey) && (
+                <button type="button" className="note-edit" onClick={() => setEditing(n)} title={editTitle(n)}>
+                  ✎
+                </button>
+              )}
               {n.detail && (
                 <div className="app-detail" title={n.detail}>
                   {n.detail}
@@ -134,24 +178,26 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
           </div>
         </td>
         <td className="assignee-cell">
-          <button type="button" className={`assignee ${n.note?.mainAssignee || n.note?.subAssignees.length ? '' : 'empty'}`} onClick={() => setEditing(n)} title="クリックして担当者を設定">
-            {n.note?.mainAssignee || n.note?.subAssignees.length ? (
-              <>
-                {n.note.mainAssignee && (
-                  <span className="assignee-main" title={n.note.mainAssignee.account}>
-                    {n.note.mainAssignee.displayName}
-                  </span>
-                )}
-                {n.note.subAssignees.length > 0 && (
-                  <span className="assignee-sub" title={n.note.subAssignees.map((a) => a.account).join('\n')}>
-                    サブ {n.note.subAssignees.map((a) => a.displayName).join('、')}
-                  </span>
-                )}
-              </>
-            ) : (
-              '＋'
-            )}
-          </button>
+          {n.noteKey && (
+            <button type="button" className={`assignee ${n.note?.mainAssignee || n.note?.subAssignees.length ? '' : 'empty'}`} onClick={() => setEditing(n)} title="クリックして担当者を設定">
+              {n.note?.mainAssignee || n.note?.subAssignees.length ? (
+                <>
+                  {n.note.mainAssignee && (
+                    <span className="assignee-main" title={n.note.mainAssignee.account}>
+                      {n.note.mainAssignee.displayName}
+                    </span>
+                  )}
+                  {n.note.subAssignees.length > 0 && (
+                    <span className="assignee-sub" title={n.note.subAssignees.map((a) => a.account).join('\n')}>
+                      サブ {n.note.subAssignees.map((a) => a.displayName).join('、')}
+                    </span>
+                  )}
+                </>
+              ) : (
+                '＋'
+              )}
+            </button>
+          )}
         </td>
         <td className="nowrap">
           <UserList accounts={n.owners} />
@@ -193,8 +239,16 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
     <div id="connection-counts" className="counts-section">
       <div className="page-head">
         <h2>接続アプリ</h2>
-        <span className="muted help" title={description}>
-          ログオン回数（端末 → 実行ファイル → アプリ）ⓘ
+        <span className="view-switch" role="group" aria-label="表示">
+          <button type="button" className={`small ${view === 'machine' ? 'active' : ''}`} aria-pressed={view === 'machine'} onClick={() => changeView('machine')}>
+            端末別
+          </button>
+          <button type="button" className={`small ${view === 'app' ? 'active' : ''}`} aria-pressed={view === 'app'} onClick={() => changeView('app')}>
+            アプリ別
+          </button>
+        </span>
+        <span className="muted help" title={view === 'app' ? appDescription : machineDescription}>
+          ログオン回数（{view === 'app' ? '実行ファイル → アプリ → 端末' : '端末 → 実行ファイル → アプリ'}）ⓘ
         </span>
         <form
           className="inline-search"
@@ -235,10 +289,10 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
       <section className="card counts-card">
         <div className="table-head">
           <span>
-            {data ? `${nodes.length} 端末` : loading ? '読み込み中…' : ''}
+            {data ? `${nodes.length} ${view === 'app' ? '実行ファイル' : '端末'}` : loading ? '読み込み中…' : ''}
             {assignee && (
               <span className="muted">
-                （担当者 {assignee === UNASSIGNED ? '未設定' : (names.find((a) => a.account === assignee)?.displayName ?? assignee)} の行と、その上の段。合計は表示している端末の件数）
+                （担当者 {assignee === UNASSIGNED ? '未設定' : (names.find((a) => a.account === assignee)?.displayName ?? assignee)} の行と、その上の段。合計は表示している{view === 'app' ? '行' : '端末'}の件数）
               </span>
             )}
           </span>
@@ -253,7 +307,7 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
                   type="button"
                   className="small"
                   onClick={() => showLevel(i)}
-                  title={i === 0 ? '端末だけを表示（全縮小）' : `${levelNames[i] ?? `${i + 1} 段目`}までを表示`}
+                  title={i === 0 ? `${levelNames[view][0]}だけを表示（全縮小）` : `${levelNames[view][i] ?? `${i + 1} 段目`}までを表示`}
                 >
                   {i === 0 ? '全縮小' : `${i + 1} 段目まで`}
                 </button>
@@ -265,7 +319,7 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
           <table className="counts tree">
             <thead>
               <tr>
-                <th>実行端末 / アプリ</th>
+                <th>{view === 'app' ? 'アプリ / 実行端末' : '実行端末 / アプリ'}</th>
                 <th>担当者</th>
                 <th>実行ユーザ</th>
                 <th className="num">接続中</th>
@@ -341,12 +395,14 @@ function NodeNoteEditor({ node, onClose, onSaved }: { node: ConnectionCountNode;
   }, [onClose])
 
   const chosen = [...(main ? [main.account] : []), ...subs.map((s) => s.account)]
+  // 日本語名をアプリ単位で共通にする行（端末の経路とは別のキーに保存する）
+  const sharedName = node.nameKey !== null && node.nameKey !== node.noteKey
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
     try {
-      await api.saveNodeNote(node.key, {
+      await api.saveNodeNote(node.noteKey, node.nameKey, {
         displayName: displayName.trim() || null,
         memo: memo.trim() || null,
         mainAssignee: main,
@@ -363,41 +419,53 @@ function NodeNoteEditor({ node, onClose, onSaved }: { node: ConnectionCountNode;
     <div className="modal-backdrop" onClick={onClose}>
       <form className="modal" onSubmit={save} onClick={(e) => e.stopPropagation()}>
         <h2>行の情報</h2>
-        <div className="muted node-path">{node.key.split('\n').map((p) => p.replace(/^[a-z]+:/, '')).join(' → ')}</div>
-        {error && <div className="alert error">{error}</div>}
-        <label>
-          日本語名
-          <input autoFocus maxLength={100} value={displayName} placeholder="例：受注管理システム" onChange={(e) => setDisplayName(e.target.value)} />
-        </label>
-        <label>
-          メモ
-          <textarea
-            className="memo-input"
-            rows={3}
-            maxLength={1000}
-            value={memo}
-            placeholder="例：営業部の受注入力画面。問い合わせは情報システム課"
-            onChange={(e) => setMemo(e.target.value)}
-          />
-        </label>
-        <div className="row">
-          <div className="field">
-            担当者（メイン）
-            {main ? <PersonChip person={main} onRemove={() => setMain(null)} /> : <PersonPicker exclude={chosen} onSelect={setMain} />}
-          </div>
-          <div className="field">
-            担当者（サブ・複数可）
-            {subs.length > 0 && (
-              <div className="person-chips">
-                {subs.map((p) => (
-                  <PersonChip key={p.account} person={p} onRemove={() => setSubs(subs.filter((s) => s.account !== p.account))} />
-                ))}
-              </div>
-            )}
-            {subs.length < 10 && <PersonPicker exclude={chosen} onSelect={(p) => setSubs([...subs, p])} />}
-          </div>
+        <div className="muted node-path">
+          {node.noteKey ? node.noteKey.split('\n').map((p) => p.replace(/^[a-z]+:/, '')).join(' → ') : node.label}
         </div>
-        <div className="muted">担当者は AD から検索して選びます。すべて空にして保存すると、この行の設定を外します。</div>
+        {error && <div className="alert error">{error}</div>}
+        {node.nameKey && (
+          <label>
+            日本語名{sharedName && <span className="muted">（アプリ単位で共通。{node.label} のすべての端末の行に表示します）</span>}
+            <input autoFocus maxLength={100} value={displayName} placeholder="例：受注管理システム" onChange={(e) => setDisplayName(e.target.value)} />
+          </label>
+        )}
+        {node.noteKey && (
+          <>
+          <label>
+            メモ
+            <textarea
+              className="memo-input"
+              rows={3}
+              maxLength={1000}
+              value={memo}
+              placeholder="例：営業部の受注入力画面。問い合わせは情報システム課"
+              onChange={(e) => setMemo(e.target.value)}
+            />
+          </label>
+          <div className="row">
+            <div className="field">
+              担当者（メイン）
+              {main ? <PersonChip person={main} onRemove={() => setMain(null)} /> : <PersonPicker exclude={chosen} onSelect={setMain} />}
+            </div>
+            <div className="field">
+              担当者（サブ・複数可）
+              {subs.length > 0 && (
+                <div className="person-chips">
+                  {subs.map((p) => (
+                    <PersonChip key={p.account} person={p} onRemove={() => setSubs(subs.filter((s) => s.account !== p.account))} />
+                  ))}
+                </div>
+              )}
+              {subs.length < 10 && <PersonPicker exclude={chosen} onSelect={(p) => setSubs([...subs, p])} />}
+            </div>
+          </div>
+          </>
+        )}
+        <div className="muted">
+          {node.noteKey
+            ? '担当者は AD から検索して選びます。すべて空にして保存すると、この行の設定を外します。'
+            : '空にして保存すると、日本語名の設定を外します。メモ・担当者は端末の行で設定します。'}
+        </div>
         <div className="actions">
           <button type="submit" className="primary" disabled={saving}>
             保存
