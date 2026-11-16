@@ -37,6 +37,9 @@ public static class SessionEndpoints
     /// <summary>一覧に出すもの（<see cref="SessionSearch.Source"/>）：セッションと DB Link 利用元の両方</summary>
     public const string AllSource = "all";
 
+    /// <summary>ID でまとめて読むときの 1 回の件数</summary>
+    private const int IdChunkSize = 1000;
+
     /// <summary>一覧の 1 行（DB Link の可能性がある行は、特定できた接続元のアプリも含める）</summary>
     internal static IQueryable<SessionListItem> Project(IQueryable<TrackedSession> q) =>
         q.Select(x => new SessionListItem(
@@ -54,6 +57,18 @@ public static class SessionEndpoints
 
         // セッション履歴。Source により監視対象のセッションと DB Link 利用元を同じ一覧（ログオンが新しい順）で返す
         g.MapGet("/sessions", ([AsParameters] SessionSearch s, AppDbContext db) => QueryRowsAsync(db, s));
+
+        // セッション履歴の Excel 出力（検索条件は一覧と同じ。ログオンが新しい順に最大 SessionExport.MaxRows 行）
+        g.MapGet("/sessions/export", async ([AsParameters] SessionSearch s, AppDbContext db, CancellationToken ct) =>
+        {
+            var now = DateTime.Now;
+            var result = await QueryRowsAsync(db, s with { Page = 1, PageSize = SessionExport.MaxRows }, SessionExport.MaxRows);
+            var userNames = await db.DirectoryUsers.AsNoTracking().Where(d => d.Found && d.DisplayName != null)
+                .ToDictionaryAsync(d => d.Account, d => d.DisplayName!, ct);
+            var targetName = s.TargetId is { } tid ? await db.Targets.Where(t => t.Id == tid).Select(t => t.Name).FirstOrDefaultAsync(ct) : null;
+            var bytes = SessionExport.Create(result, s, targetName, userNames, now);
+            return Results.File(bytes, XlsxWriter.ContentType, $"セッション履歴_{now:yyyyMMdd_HHmm}.xlsx");
+        });
 
         // 実行ユーザの表示名（AD の displayName）。画面はアカウントの代わりに表示名を出す（キーはアカウントを大文字にした値）
         g.MapGet("/user-names", async (AppDbContext db, CancellationToken ct) =>
@@ -112,9 +127,10 @@ public static class SessionEndpoints
     /// セッション履歴の 1 ページ。Source により監視対象のセッションと DB Link 利用元を同じ一覧（ログオンが新しい順）で返す。
     /// 両方を出す場合も並べ替え・ページの切り出しは DB で行い（UNION ALL）、ページに入った行だけを読み込む
     /// </summary>
-    internal static async Task<PagedResult<SessionRow>> QueryRowsAsync(AppDbContext db, SessionSearch s)
+    /// <param name="maxPageSize">1 ページの最大件数（画面は 500。Excel 出力はそれより多く読む）</param>
+    internal static async Task<PagedResult<SessionRow>> QueryRowsAsync(AppDbContext db, SessionSearch s, int maxPageSize = 500)
     {
-        var pageSize = Math.Clamp(s.PageSize, 1, 500);
+        var pageSize = Math.Clamp(s.PageSize, 1, maxPageSize);
         var page = Math.Max(1, s.Page);
         var withSessions = s.Source != DbLinkSource;
         var withUsages = s.Source == DbLinkSource || (s.Source == AllSource && !HasSessionOnlyCondition(s));
@@ -130,12 +146,17 @@ public static class SessionEndpoints
 
         var sessionIds = keys.Where(k => k.Order == 1).Select(k => k.Id).ToList();
         var usageIds = keys.Where(k => k.Order == 0).Select(k => k.Id).ToList();
-        var sessions = sessionIds.Count == 0 ? new Dictionary<long, SessionListItem>()
-            : await Project(db.Sessions.AsNoTracking().Where(x => sessionIds.Contains(x.Id))).ToDictionaryAsync(x => x.Id);
-        var usages = usageIds.Count == 0 ? new Dictionary<long, SessionRow>()
-            : await db.DbLinkUsages.AsNoTracking().Where(u => usageIds.Contains(u.Id))
-                .Select(u => new SessionRow("dblink", db.Targets.Where(t => t.Id == u.TargetId).Select(t => t.Name).FirstOrDefault() ?? "", u.LogonTime, null, DbLinkUsageDto.From(u, u.LinkSource!.Name)))
-                .ToDictionaryAsync(r => r.Usage!.Id);
+        // ID は分けて読む（Excel 出力では件数が多く、SQL Server のパラメーター数の上限 2100 を超えないように）
+        var sessions = new Dictionary<long, SessionListItem>();
+        foreach (var chunk in sessionIds.Chunk(IdChunkSize))
+            foreach (var x in await Project(db.Sessions.AsNoTracking().Where(x => chunk.Contains(x.Id))).ToListAsync())
+                sessions[x.Id] = x;
+        var usages = new Dictionary<long, SessionRow>();
+        foreach (var chunk in usageIds.Chunk(IdChunkSize))
+            foreach (var r in await db.DbLinkUsages.AsNoTracking().Where(u => chunk.Contains(u.Id))
+                         .Select(u => new SessionRow("dblink", db.Targets.Where(t => t.Id == u.TargetId).Select(t => t.Name).FirstOrDefault() ?? "", u.LogonTime, null, DbLinkUsageDto.From(u, u.LinkSource!.Name)))
+                         .ToListAsync())
+                usages[r.Usage!.Id] = r;
 
         // キーの順に並べる（キーの取得後に削除された行は除く）
         var rows = new List<SessionRow>(keys.Count);
