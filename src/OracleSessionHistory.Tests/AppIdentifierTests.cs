@@ -27,7 +27,9 @@ public class AppIdentifierTests
 
     [Theory]
     [InlineData("販売管理.exe", null, "販売管理.exe")]
-    [InlineData(" JDBC Thin Client ", null, "JDBC Thin Client")]
+    [InlineData(" SQL Developer ", null, "SQL Developer")]
+    [InlineData("JDBC Thin Client", null, null)] // 共通のドライバ名は端末ごと
+    [InlineData("python.exe", null, null)]
     [InlineData("dotnet.exe", "Api.dll", "Api.dll")]
     [InlineData("java.exe", "x.jar", "x.jar")]
     [InlineData("w3wp.exe", null, null)]

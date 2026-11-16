@@ -74,12 +74,14 @@ public static partial class AppIdentifier
     }
 
     /// <summary>
-    /// 複数のアプリを動かす実行ファイル（下の段のプール・実行元・dll でアプリを区別するもの）。
+    /// 複数のアプリを動かす実行ファイル・共通のドライバ名（同じ名前でも端末・処理によって別のアプリのもの）。
     /// 接続アプリ表の日本語名はアプリ単位で共通にするが、これらとその下のプール・実行元は端末ごとの行で設定する。
     /// </summary>
     private static readonly HashSet<string> HostExecutables = new(StringComparer.OrdinalIgnoreCase)
     {
-        "w3wp.exe", "oracle.exe", "dotnet.exe", "java.exe", "javaw.exe",
+        "w3wp.exe", "oracle.exe", "dotnet.exe", "java.exe", "javaw.exe", "JDBC Thin Client",
+        "python.exe", "pythonw.exe", "node.exe", "perl.exe",
+        "cmd.exe", "powershell.exe", "pwsh.exe", "cscript.exe", "wscript.exe",
     };
 
     /// <summary>

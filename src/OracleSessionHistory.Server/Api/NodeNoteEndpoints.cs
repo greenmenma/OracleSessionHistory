@@ -37,7 +37,10 @@ public sealed record NodeNoteDto(string? DisplayName, string? Memo, AssigneeDto?
 /// <param name="NodeKey">メモ・担当者を保存する行のキー（<see cref="ConnectionCountNode.NoteKey"/>。null は日本語名だけを保存する）</param>
 /// <param name="MainAssignee">メインの担当者（AD から選んだ人。null は未設定）</param>
 /// <param name="SubAssignees">サブの担当者（重複・メインと同じ人は除く）</param>
-/// <param name="NameKey">日本語名を保存するキー（<see cref="ConnectionCountNode.NameKey"/>。null は <paramref name="NodeKey"/> と同じ）</param>
+/// <param name="NameKey">
+/// 日本語名を保存するキー（<see cref="ConnectionCountNode.NameKey"/>）。<paramref name="NodeKey"/> と同じか、アプリ単位のキー（<see cref="ConnectionTreeKeys.AppNamePrefix"/>）。
+/// null は日本語名を変えない（<paramref name="DisplayName"/> は使わない）
+/// </param>
 public sealed record NodeNoteInput(
     string? NodeKey, string? DisplayName, string? Memo, AssigneeDto? MainAssignee, IReadOnlyList<AssigneeDto>? SubAssignees,
     string? NameKey = null);
@@ -57,6 +60,9 @@ public static class ConnectionTreeKeys
     /// <summary>上の段のキーに、この段の「種類:名前」をつなげる</summary>
     public static string Of(string? parentKey, string kind, string label) =>
         string.IsNullOrEmpty(parentKey) ? $"{kind}:{label}" : $"{parentKey}{Separator}{kind}:{label}";
+
+    /// <summary>アプリ単位の日本語名のキーか</summary>
+    public static bool IsAppKey(string key) => key.StartsWith(AppNamePrefix, StringComparison.Ordinal);
 
     /// <summary>アプリ単位の日本語名のキー（大文字小文字は区別しない）</summary>
     public static string AppKeyOf(string appName) => AppNamePrefix + appName.Trim().ToUpperInvariant();
@@ -183,6 +189,12 @@ public static class NodeNoteEndpoints
         if (Clean(input.NodeKey) is null && Clean(input.NameKey) is null) errors["nodeKey"] = ["行のキーがありません"];
         else if (input.NodeKey?.Length > AppNodeNoteLimits.NodeKeyLength || input.NameKey?.Length > AppNodeNoteLimits.NodeKeyLength)
             errors["nodeKey"] = ["この行は名前が長すぎるため設定できません"];
+        // 日本語名のキーは、同じ行かアプリ単位のキーだけ（別の行のメモ・担当者を消さないように）。
+        // メモ・担当者のキーは行のキー（アプリ単位のキーにメモ・担当者は保存しない）
+        else if (Clean(input.NameKey) is not null && input.NameKey != input.NodeKey && !ConnectionTreeKeys.IsAppKey(input.NameKey!))
+            errors["nameKey"] = ["日本語名のキーが正しくありません"];
+        else if (Clean(input.NodeKey) is not null && ConnectionTreeKeys.IsAppKey(input.NodeKey!))
+            errors["nodeKey"] = ["行のキーが正しくありません"];
         if (Clean(input.DisplayName)?.Length > AppNodeNoteLimits.DisplayNameLength)
             errors["displayName"] = [$"日本語名は {AppNodeNoteLimits.DisplayNameLength} 文字以内で入力してください"];
         if (Clean(input.Memo)?.Length > AppNodeNoteLimits.MemoLength)
@@ -199,7 +211,8 @@ public static class NodeNoteEndpoints
 
     /// <summary>
     /// 行の情報を保存する。日本語名は NameKey（アプリ単位のキー等）、メモ・担当者は NodeKey に保存する
-    /// （別のキーの場合、NodeKey の行の日本語名は外す）。保存後の情報（すべて空の場合は null）を返す
+    /// （別のキーの場合、NodeKey の行の日本語名は外す。NameKey が null なら NodeKey の行の日本語名はそのまま）。
+    /// 保存後の情報（すべて空の場合は null）を返す
     /// </summary>
     internal static async Task<NodeNoteDto?> SaveAsync(AppDbContext db, NodeNoteInput input, DateTime now, CancellationToken ct = default)
     {
@@ -208,9 +221,15 @@ public static class NodeNoteEndpoints
         var displayName = Clean(input.DisplayName);
         var memo = Clean(input.Memo);
         var nodeKey = Clean(input.NodeKey) is null ? null : input.NodeKey;
-        var nameKey = Clean(input.NameKey) is null ? nodeKey : input.NameKey;
+        var nameKey = Clean(input.NameKey) is null ? null : input.NameKey;
         if (nodeKey is null)
             return NodeNoteDto.WithName(null, (await UpsertAsync(db, nameKey!, displayName, null, null, [], now, ct))?.DisplayName);
+        if (nameKey is null)
+        {
+            // 日本語名は別の行（アプリの行）で設定するため、この行に残っている日本語名は変えない
+            var current = await db.AppNodeNotes.AsNoTracking().Where(n => n.NodeKey == nodeKey).Select(n => n.DisplayName).FirstOrDefaultAsync(ct);
+            return await UpsertAsync(db, nodeKey, current, memo, main, subs, now, ct);
+        }
         if (nameKey == nodeKey) return await UpsertAsync(db, nodeKey, displayName, memo, main, subs, now, ct);
         var name = await UpsertAsync(db, nameKey!, displayName, null, null, [], now, ct);
         var note = await UpsertAsync(db, nodeKey, null, memo, main, subs, now, ct);
