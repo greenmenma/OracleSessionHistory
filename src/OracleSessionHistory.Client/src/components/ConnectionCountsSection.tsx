@@ -58,9 +58,16 @@ function saveView(v: ConnectionView) {
   }
 }
 
-/** 下の段の無い行（日別の列に件数の背景色を付ける） */
-function leaves(nodes: ConnectionCountNode[]): ConnectionCountNode[] {
-  return nodes.flatMap((n) => (n.children.length === 0 && n.kind !== 'machine' ? [n] : leaves(n.children)))
+/**
+ * 下の段の無い行（日別の列に件数の背景色を付ける）。
+ * 一番上の段の端末（端末別で監査証跡の件数だけの端末）は除く。アプリ別の最下段の端末の行は含む
+ */
+function isLeaf(n: ConnectionCountNode, depth: number): boolean {
+  return n.children.length === 0 && !(n.kind === 'machine' && depth === 0)
+}
+
+function leaves(nodes: ConnectionCountNode[], depth = 0): ConnectionCountNode[] {
+  return nodes.flatMap((n) => (isLeaf(n, depth) ? [n] : leaves(n.children, depth + 1)))
 }
 
 /** 下の段を持つ行のキーと段（0 が端末） */
@@ -209,7 +216,7 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
           const audit = n.auditPeriods.includes(c.key)
           // 端末の行で監査の件数を使えなかった列（履歴の件数）には ※ を付ける
           const fromHistory = n.kind === 'machine' && guides.length === 0 && !audit
-          const leaf = n.children.length === 0 && n.kind !== 'machine'
+          const leaf = isLeaf(n, guides.length)
           const heat = leaf && i < 7 && v > 0 ? 0.08 + (v / max) * 0.5 : 0
           return (
             <td

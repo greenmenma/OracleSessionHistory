@@ -12,6 +12,16 @@
   </ItemGroup>
 
   <!--
+    ASP.NET Core の静的 Web アセット（ビルド時の manifest）は使わない。
+    有効のままだと manifest が wwwroot（発行時だけ作られ、git 管理外）を参照し、
+    フォルダが無い開発環境では起動時に DirectoryNotFoundException になる。
+    画面は発行時に下の PublishClient で wwwroot に配置し、UseStaticFiles で配信する。
+  -->
+  <PropertyGroup>
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+  </PropertyGroup>
+
+  <!--
     発行（dotnet publish）時に Client をビルドし、発行先の wwwroot に配置する。
     dotnet build / dotnet run では実行しない（デバッグ時は Vite の開発サーバーを使う）。
     Client のビルドを省略する場合は -p:SkipClientBuild=true を指定する。

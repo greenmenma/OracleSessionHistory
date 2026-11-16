@@ -84,19 +84,19 @@ public sealed class NodeNoteTests : IDisposable
     {
         _db.Database.Migrate();
         var saved = await NodeNoteEndpoints.SaveAsync(_db,
-            new NodeNoteInput("machine:WEB01", " 受注管理 ", "メモ", Yamada, [Suzuki, new(" ", "x"), Yamada, P("SUZUKI", "重複"), Sato]), Now);
+            new NodeNoteInput("machine:WEB01", " 受注管理 ", "メモ", Yamada, [Suzuki, new(" ", "x"), Yamada, P("SUZUKI", "重複"), Sato], "machine:WEB01"), Now);
         Assert.Equal("受注管理", saved!.DisplayName);
         Assert.Equal(Yamada, saved.MainAssignee);
         // アカウントの無いもの・メインと同じ人は除く（アカウントの大文字小文字は区別しない）
         Assert.Equal([Suzuki, Sato], saved.SubAssignees);
 
         // 担当者を入れ替える（同じ人をメインからサブへ移しても一意インデックスに当たらない）
-        saved = await NodeNoteEndpoints.SaveAsync(_db, new NodeNoteInput("machine:WEB01", null, null, Suzuki, [Yamada]), Now);
+        saved = await NodeNoteEndpoints.SaveAsync(_db, new NodeNoteInput("machine:WEB01", null, null, Suzuki, [Yamada], "machine:WEB01"), Now);
         Assert.Equal(Suzuki, saved!.MainAssignee);
         Assert.Equal([Yamada], saved.SubAssignees);
         Assert.Equal(2, _db.AppNodeAssignees.AsNoTracking().Count());
 
-        Assert.Null(await NodeNoteEndpoints.SaveAsync(_db, new NodeNoteInput("machine:WEB01", " ", "", null, []), Now));
+        Assert.Null(await NodeNoteEndpoints.SaveAsync(_db, new NodeNoteInput("machine:WEB01", " ", "", null, [], "machine:WEB01"), Now));
         Assert.Empty(_db.AppNodeNotes.AsNoTracking());
         Assert.Empty(_db.AppNodeAssignees.AsNoTracking()); // 担当者も削除される
         // 未設定の行を空にしてもエラーにしない
@@ -174,7 +174,10 @@ public sealed class NodeNoteTests : IDisposable
     {
         _db.Database.Migrate();
         var appKey = ConnectionTreeKeys.AppKeyOf("販売.exe");
-        await NodeNoteEndpoints.SaveAsync(_db, new NodeNoteInput("machine:WEB02\nexe:販売.exe", "古い名前", "メモ", Yamada, []), Now);
+        await NodeNoteEndpoints.SaveAsync(_db, new NodeNoteInput("machine:WEB02\nexe:販売.exe", "古い名前", "メモ", Yamada, [], "machine:WEB02\nexe:販売.exe"), Now);
+        // アプリ別の端末の行から（日本語名はアプリの行で設定するため NameKey なし）：行に残っている日本語名は消さない
+        var kept = await NodeNoteEndpoints.SaveAsync(_db, new NodeNoteInput("machine:WEB02\nexe:販売.exe", null, "メモ", Yamada, []), Now);
+        Assert.Equal(("古い名前", "メモ"), (kept!.DisplayName, kept.Memo));
 
         var saved = await NodeNoteEndpoints.SaveAsync(_db, new NodeNoteInput("machine:WEB02\nexe:販売.exe", "販売管理", "メモ", Yamada, [], appKey), Now);
         Assert.Equal(("販売管理", "メモ"), (saved!.DisplayName, saved.Memo));
@@ -189,6 +192,9 @@ public sealed class NodeNoteTests : IDisposable
         Assert.Equal(["machine:WEB02\nexe:販売.exe"], _db.AppNodeNotes.AsNoTracking().Select(n => n.NodeKey).ToList());
         Assert.NotNull(NodeNoteEndpoints.Validate(new NodeNoteInput(null, "x", null, null, null)));
         Assert.Null(NodeNoteEndpoints.Validate(new NodeNoteInput(null, "x", null, null, null, appKey)));
+        // 日本語名のキーに別の行は指定できない（その行のメモ・担当者が消えるため）。アプリ単位のキーにメモ・担当者は保存しない
+        Assert.NotNull(NodeNoteEndpoints.Validate(new NodeNoteInput("machine:WEB02", "x", null, null, null, "machine:WEB01")));
+        Assert.NotNull(NodeNoteEndpoints.Validate(new NodeNoteInput(appKey, null, "メモ", null, null)));
     }
 
     [Fact]
