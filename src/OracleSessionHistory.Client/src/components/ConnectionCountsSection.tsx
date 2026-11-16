@@ -35,9 +35,9 @@ const machineDescription =
   'アプリの行（w3wp.exe・sqlplus.exe 等とプール・実行元を除く）の日本語名はアプリ単位で、どの端末の行でも同じ名前になります'
 
 const appDescription =
-  '実行ファイル → IIS のプール・sqlplus の実行元・dll → 実行端末の順に、ログオン回数を表示します（件数はすべてこのシステムが取得したセッション数）。' +
-  'DB Link 経由の接続は、接続元のアプリ・接続元の端末にまとめます。Oracle 内部プロセス（ジョブ等）は含みません。' +
-  'アプリの行の ✎ で日本語名（アプリ単位で共通）を、端末の行の ✎ または担当者の欄でメモ・担当者（端末別の最下段の行と共通）を設定できます'
+  '同じ名前のアプリを、端末・経路によらず 1 行にまとめてログオン回数を表示します（件数はすべてこのシステムが取得したセッション数）。' +
+  'IIS のプール・sqlplus の実行元は、実行ファイルとその名前でまとめます。DB Link 経由の接続は接続元のアプリとして数えます。Oracle 内部プロセス（ジョブ等）は含みません。' +
+  '「経路」でそのアプリが使われている経路（端末 → 実行ファイル → …）を確認し、経路ごとにメモ・担当者を設定できます。✎ で日本語名（アプリ単位で共通）を設定できます'
 
 /** 表示の切り替えをブラウザに保存するキー */
 const viewStorageKey = 'connection-counts-view'
@@ -75,16 +75,13 @@ function branches(nodes: ConnectionCountNode[], depth = 0): { key: string; depth
   return nodes.flatMap((n) => (n.children.length === 0 ? [] : [{ key: n.key, depth }, ...branches(n.children, depth + 1)]))
 }
 
-/** 段の名前（展開ボタンの説明） */
-const levelNames: Record<ConnectionView, string[]> = {
-  machine: ['端末', '実行ファイル', 'プール・実行元・DB Link', '接続元の端末', '接続元の実行ファイル', '接続元のプール・実行元'],
-  app: ['実行ファイル', 'プール・実行元・dll', '端末'],
-}
+/** 段の名前（展開ボタンの説明。端末別のみ） */
+const levelNames = ['端末', '実行ファイル', 'プール・実行元・DB Link', '接続元の端末', '接続元の実行ファイル', '接続元のプール・実行元']
 
 /** 行の ✎ の説明 */
 function editTitle(n: ConnectionCountNode): string {
   if (!n.noteKey) return '日本語名（アプリ単位で共通）を設定'
-  if (!n.nameKey) return 'メモ・担当者を設定（日本語名はアプリの行で設定）'
+  if (!n.nameKey) return 'メモ・担当者を設定（日本語名はアプリ別の一覧で設定）'
   return n.nameKey !== n.noteKey ? '日本語名（アプリ単位で共通）・メモ・担当者を設定' : '日本語名・メモ・担当者を設定'
 }
 
@@ -101,16 +98,21 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
   )
   const suggestions = useAsync(() => api.assignees(), [], undefined)
   const [editing, setEditing] = useState<ConnectionCountNode>()
+  // 経路を表示しているアプリ別の行のキー（再読み込み後も最新の行を表示する）
+  const [pathsOf, setPathsOf] = useState<string>()
+  // アプリ別は木にしない（下の段は経路のダイアログで表示する）
+  const flat = view === 'app'
   // 縮小している行のキー（既定は全展開）
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
 
   const nodes = data?.nodes ?? []
   const totals = columns.map((c) => nodes.reduce((a, n) => a + n[c.key], 0))
-  const max = Math.max(1, ...leaves(nodes).flatMap((n) => columns.slice(0, 7).map((c) => n[c.key])))
+  const max = Math.max(1, ...(flat ? nodes : leaves(nodes)).flatMap((n) => columns.slice(0, 7).map((c) => n[c.key])))
   // アプリ別は監査証跡の件数を使わない
   const audits = view === 'machine' ? (data?.audit ?? []) : []
   const names = suggestions.data ?? []
-  const allBranches = branches(nodes)
+  const allBranches = flat ? [] : branches(nodes)
+  const pathsNode = flat && pathsOf ? nodes.find((n) => n.key === pathsOf) : undefined
   const levels = allBranches.length === 0 ? 0 : Math.max(...allBranches.map((b) => b.depth)) + 1
 
   const changeView = (v: ConnectionView) => {
@@ -147,7 +149,7 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
                 {last ? '└ ' : '├ '}
               </span>
             )}
-            {n.children.length > 0 ? (
+            {flat ? null : n.children.length > 0 ? (
               <button
                 type="button"
                 className="tree-toggle"
@@ -182,27 +184,27 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
                 </div>
               )}
             </div>
+            {flat && (
+              <button type="button" className="small path-button" onClick={() => setPathsOf(n.key)} title="このアプリが使われている経路（端末 → 実行ファイル → …）を表示">
+                経路 {n.children.length}
+              </button>
+            )}
           </div>
         </td>
         <td className="assignee-cell">
+          {flat && (
+            <button
+              type="button"
+              className={`assignee ${n.pathAssignees?.length ? '' : 'empty'}`}
+              onClick={() => setPathsOf(n.key)}
+              title={n.pathAssignees?.length ? `${n.pathAssignees.map((a) => `${a.displayName}（${a.account}）`).join('\n')}\n（経路ごとに設定。クリックで経路を表示）` : 'クリックして経路ごとに担当者を設定'}
+            >
+              {n.pathAssignees?.length ? <span className="assignee-main">{n.pathAssignees.map((a) => a.displayName).join('、')}</span> : '＋'}
+            </button>
+          )}
           {n.noteKey && (
             <button type="button" className={`assignee ${n.note?.mainAssignee || n.note?.subAssignees.length ? '' : 'empty'}`} onClick={() => setEditing(n)} title="クリックして担当者を設定">
-              {n.note?.mainAssignee || n.note?.subAssignees.length ? (
-                <>
-                  {n.note.mainAssignee && (
-                    <span className="assignee-main" title={n.note.mainAssignee.account}>
-                      {n.note.mainAssignee.displayName}
-                    </span>
-                  )}
-                  {n.note.subAssignees.length > 0 && (
-                    <span className="assignee-sub" title={n.note.subAssignees.map((a) => a.account).join('\n')}>
-                      サブ {n.note.subAssignees.map((a) => a.displayName).join('、')}
-                    </span>
-                  )}
-                </>
-              ) : (
-                '＋'
-              )}
+              <Assignees n={n} />
             </button>
           )}
         </td>
@@ -216,7 +218,7 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
           const audit = n.auditPeriods.includes(c.key)
           // 端末の行で監査の件数を使えなかった列（履歴の件数）には ※ を付ける
           const fromHistory = n.kind === 'machine' && guides.length === 0 && !audit
-          const leaf = isLeaf(n, guides.length)
+          const leaf = flat || isLeaf(n, guides.length)
           const heat = leaf && i < 7 && v > 0 ? 0.08 + (v / max) * 0.5 : 0
           return (
             <td
@@ -238,7 +240,7 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
           )}
         </td>
       </tr>
-      {!collapsed.has(n.key) && n.children.map((c, i) => renderNode(c, [...guides, !last], i === n.children.length - 1))}
+      {!flat && !collapsed.has(n.key) && n.children.map((c, i) => renderNode(c, [...guides, !last], i === n.children.length - 1))}
     </Fragment>
   )
 
@@ -255,7 +257,7 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
           </button>
         </span>
         <span className="muted help" title={view === 'app' ? appDescription : machineDescription}>
-          ログオン回数（{view === 'app' ? '実行ファイル → アプリ → 端末' : '端末 → 実行ファイル → アプリ'}）ⓘ
+          ログオン回数（{view === 'app' ? '同じ名前のアプリを 1 行' : '端末 → 実行ファイル → アプリ'}）ⓘ
         </span>
         <form
           className="inline-search"
@@ -296,37 +298,47 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
       <section className="card counts-card">
         <div className="table-head">
           <span>
-            {data ? `${nodes.length} ${view === 'app' ? '実行ファイル' : '端末'}` : loading ? '読み込み中…' : ''}
+            {data ? `${nodes.length} ${view === 'app' ? 'アプリ' : '端末'}` : loading ? '読み込み中…' : ''}
             {assignee && (
               <span className="muted">
-                （担当者 {assignee === UNASSIGNED ? '未設定' : (names.find((a) => a.account === assignee)?.displayName ?? assignee)} の行と、その上の段。合計は表示している{view === 'app' ? '行' : '端末'}の件数）
+                （担当者 {assignee === UNASSIGNED ? '未設定' : (names.find((a) => a.account === assignee)?.displayName ?? assignee)} の{view === 'app' ? '' : '行と、'}{view === 'app' ? '経路を含むアプリ。合計は表示しているアプリの件数）' : 'その上の段。合計は表示している端末の件数）'}
               </span>
             )}
           </span>
-          {levels > 0 && (
-            <span className="tree-levels">
-              <button type="button" className="small" onClick={() => setCollapsed(new Set())} title="すべての段を表示">
-                全展開
-              </button>
-              {Array.from({ length: levels }, (_, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className="small"
-                  onClick={() => showLevel(i)}
-                  title={i === 0 ? `${levelNames[view][0]}だけを表示（全縮小）` : `${levelNames[view][i] ?? `${i + 1} 段目`}までを表示`}
-                >
-                  {i === 0 ? '全縮小' : `${i + 1} 段目まで`}
+          <span className="tree-levels">
+            {levels > 0 && (
+              <>
+                <button type="button" className="small" onClick={() => setCollapsed(new Set())} title="すべての段を表示">
+                  全展開
                 </button>
-              ))}
-            </span>
-          )}
+                {Array.from({ length: levels }, (_, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    className="small"
+                    onClick={() => showLevel(i)}
+                    title={i === 0 ? '端末だけを表示（全縮小）' : `${levelNames[i] ?? `${i + 1} 段目`}までを表示`}
+                  >
+                    {i === 0 ? '全縮小' : `${i + 1} 段目まで`}
+                  </button>
+                ))}
+              </>
+            )}
+            <a
+              className="button-link small"
+              href={api.connectionCountsExportUrl(targetId, q, assignee || undefined)}
+              download
+              title="アプリ別・アプリ別の経路・端末別のシートを Excel（.xlsx）で保存（絞り込みは画面と同じ）"
+            >
+              Excel 出力
+            </a>
+          </span>
         </div>
         <div className="table-wrap">
           <table className="counts tree">
             <thead>
               <tr>
-                <th>{view === 'app' ? 'アプリ / 実行端末' : '実行端末 / アプリ'}</th>
+                <th>{view === 'app' ? 'アプリ' : '実行端末 / アプリ'}</th>
                 <th>担当者</th>
                 <th>実行ユーザ</th>
                 <th className="num">接続中</th>
@@ -371,6 +383,9 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
         </div>
       </section>
 
+      {pathsNode && (
+        <PathDialog app={pathsNode} max={max} blocked={!!editing} onEdit={setEditing} onClose={() => setPathsOf(undefined)} />
+      )}
       {editing && (
         <NodeNoteEditor
           node={editing}
@@ -382,6 +397,150 @@ export default function ConnectionCountsSection({ targetId }: { targetId?: numbe
           }}
         />
       )}
+    </div>
+  )
+}
+
+/** 担当者（メイン・サブ）の表示 */
+function Assignees({ n }: { n: ConnectionCountNode }) {
+  if (!n.note?.mainAssignee && !n.note?.subAssignees.length) return <>＋</>
+  return (
+    <>
+      {n.note.mainAssignee && (
+        <span className="assignee-main" title={n.note.mainAssignee.account}>
+          {n.note.mainAssignee.displayName}
+        </span>
+      )}
+      {n.note.subAssignees.length > 0 && (
+        <span className="assignee-sub" title={n.note.subAssignees.map((a) => a.account).join('\n')}>
+          サブ {n.note.subAssignees.map((a) => a.displayName).join('、')}
+        </span>
+      )}
+    </>
+  )
+}
+
+/**
+ * アプリ別の行の経路（端末 → 実行ファイル → …。端末別の最下段の行）。経路ごとにメモ・担当者（プール等は日本語名も）を設定できる。
+ * blocked の間（行の情報の編集中）は Esc で閉じない
+ */
+function PathDialog({
+  app,
+  max,
+  blocked,
+  onEdit,
+  onClose,
+}: {
+  app: ConnectionCountNode
+  max: number
+  blocked: boolean
+  onEdit: (n: ConnectionCountNode) => void
+  onClose: () => void
+}) {
+  useEffect(() => {
+    if (blocked) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [blocked, onClose])
+
+  const shown = columns.filter((c) => c.key === 'today' || c.key === 'month1' || c.key === 'month2')
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal wide" onClick={(e) => e.stopPropagation()}>
+        <h2>
+          経路：{app.note?.displayName && <span className="tree-display-name">{app.note.displayName}</span>}
+          {app.label}
+        </h2>
+        <div className="muted">
+          このアプリが使われている経路です（{app.children.length} 件。件数はこのシステムが取得したセッション数）。✎ または担当者の欄で経路ごとのメモ・担当者を設定できます。
+          {app.nameKey ? '日本語名はアプリ単位で、一覧の ✎ で設定します。' : 'この行の日本語名は経路ごとに設定します。'}
+        </div>
+        <div className="table-wrap path-table">
+          <table className="counts">
+            <thead>
+              <tr>
+                <th>経路</th>
+                <th>担当者</th>
+                <th>実行ユーザ</th>
+                <th className="num">接続中</th>
+                <th>最終確認</th>
+                {shown.map((c) => (
+                  <th key={c.key} className="num">
+                    {c.label}
+                  </th>
+                ))}
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {app.children.map((p) => (
+                <tr key={p.key}>
+                  <td>
+                    <div className="tree-label path-label">
+                      {p.note?.displayName && <span className="tree-display-name">{p.note.displayName}</span>}
+                      <span className={`tree-name ${p.note?.displayName ? 'sub-name' : ''}`}>{p.label}</span>
+                      {(p.nameKey || p.noteKey) && (
+                        <button type="button" className="note-edit" onClick={() => onEdit(p)} title={editTitle(p)}>
+                          ✎
+                        </button>
+                      )}
+                      {p.detail && (
+                        <div className="app-detail" title={p.detail}>
+                          {p.detail}
+                        </div>
+                      )}
+                      {p.note?.memo && (
+                        <div className="tree-memo" title={p.note.memo}>
+                          {p.note.memo}
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="assignee-cell">
+                    {p.noteKey && (
+                      <button
+                        type="button"
+                        className={`assignee ${p.note?.mainAssignee || p.note?.subAssignees.length ? '' : 'empty'}`}
+                        onClick={() => onEdit(p)}
+                        title="クリックして担当者を設定"
+                      >
+                        <Assignees n={p} />
+                      </button>
+                    )}
+                  </td>
+                  <td className="nowrap">
+                    <UserList accounts={p.owners} />
+                  </td>
+                  <td className={`num ${p.connected === 0 ? 'zero' : ''}`}>{p.connected}</td>
+                  <td className="nowrap">{fmtDateTime(p.lastSeenAt)}</td>
+                  {shown.map((c) => {
+                    const v = p[c.key]
+                    const heat = c.key === 'today' && v > 0 ? 0.08 + (v / max) * 0.5 : 0
+                    return (
+                      <td key={c.key} className={`num ${v === 0 ? 'zero' : ''}`} style={heat ? { background: `rgb(var(--heat) / ${heat})` } : undefined}>
+                        {v.toLocaleString()}
+                      </td>
+                    )
+                  })}
+                  <td className="nowrap">
+                    {p.open && (
+                      <button type="button" className="small" onClick={() => navigate('/sessions', p.open!)} title="この経路のセッション履歴を表示">
+                        履歴 →
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="actions">
+          <button type="button" onClick={onClose}>
+            閉じる
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

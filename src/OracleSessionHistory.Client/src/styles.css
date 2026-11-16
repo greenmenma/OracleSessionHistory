@@ -191,6 +191,18 @@ button.tree-toggle:hover { color: var(--text); }
 .view-switch button:first-child { border-radius: 6px 0 0 6px; }
 .view-switch button:last-child { border-radius: 0 6px 6px 0; margin-left: -1px; }
 .view-switch button.active { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+/* アプリ別の経路 */
+.path-button { margin-left: 8px; flex: none; white-space: nowrap; }
+.modal.wide { width: min(1100px, 100%); }
+.path-table { max-height: 60vh; overflow: auto; }
+.path-label { max-width: 520px; }
+/* リンクをボタンの見た目で表示する（Excel 出力） */
+a.button-link {
+  display: inline-flex; align-items: center; padding: 0 12px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text); text-decoration: none; white-space: nowrap; font-size: 13px;
+}
+a.button-link:hover { border-color: var(--primary); }
+a.button-link.small { padding: 2px 8px; font-size: 12px; }
 .tree-label { min-width: 120px; max-width: 420px; }
 .tree-name { overflow-wrap: anywhere; }
 .tree-kind { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); }
