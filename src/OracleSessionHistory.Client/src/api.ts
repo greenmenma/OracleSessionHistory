@@ -259,9 +259,11 @@ export interface ConnectionCountNode extends PeriodCounts {
   noteKey: string | null
   /** 日本語名を保存するキー（アプリの行はアプリ単位で共通のキー。null はこの行では設定しない） */
   nameKey: string | null
+  /** アプリ別の行の担当者（経路とその上の段に設定した人。端末別は null） */
+  pathAssignees: Assignee[] | null
 }
 
-/** 接続アプリ表の表示：端末別（端末 → 実行ファイル → アプリ）・アプリ別（実行ファイル → アプリ → 端末） */
+/** 接続アプリ表の表示：端末別（端末 → 実行ファイル → アプリの木）・アプリ別（同じ名前のアプリを 1 行にした一覧。children は経路） */
 export type ConnectionView = 'machine' | 'app'
 
 /** 接続アプリ表の行に設定する情報 */
@@ -408,6 +410,9 @@ export const api = {
   /** assignee：担当者（AD のアカウント）で絞り込む（UNASSIGNED は担当者が決まっていない行） */
   connectionCounts: (targetId?: number, q?: string, assignee?: string, view?: ConnectionView) =>
     request<ConnectionCounts>('GET', `api/connection-counts${qs({ targetId, q, assignee, view: view === 'app' ? 'app' : undefined })}`),
+  /** 接続アプリ表の Excel 出力の URL（相対パス。アプリ別・経路・端末別のシート） */
+  connectionCountsExportUrl: (targetId?: number, q?: string, assignee?: string) =>
+    `api/connection-counts/export${qs({ targetId, q, assignee })}`,
 
   linkSources: (targetId: number) => request<LinkSource[]>('GET', `api/targets/${targetId}/link-sources`),
   createLinkSource: (targetId: number, l: LinkSourceInput) =>

@@ -144,29 +144,55 @@ public sealed class NodeNoteTests : IDisposable
     }
 
     [Fact]
-    public void アプリ別は実行ファイルとプールの下に端末を並べDB_Link経由は接続元の端末にする()
+    public void アプリ別は同じ名前のアプリを1行にまとめ下の段に経路を持つ()
     {
         var notes = new Dictionary<string, NodeNoteDto>
         {
             [ConnectionTreeKeys.AppKeyOf("販売.exe")] = new("販売管理", null, null, []),
             ["machine:WEB02\nexe:販売.exe"] = new("古い名前", "メモ", Yamada, []),
+            ["machine:WEB01\nexe:w3wp.exe\napp:Foo"] = new("受注", null, null, []),
+            ["machine:WEB03"] = Note(Sato),
         };
         var view = ReportEndpoints.ToAppView(ConnectionTreeKeys.Apply(AppTree(), notes), notes);
-        Assert.Equal("w3wp.exe(Foo(WEB03,WEB01)),販売.exe(PC9,WEB01,WEB02)", Labels(view));
+        // 木にしない：アプリの行の下は経路だけ
+        Assert.Equal(["Foo", "販売.exe"], view.Select(v => v.Label));
+        Assert.All(view.SelectMany(v => v.Children), p => Assert.Empty(p.Children));
+
+        var foo = view[0];
+        Assert.Equal((9, "IIS のプール（w3wp.exe）", "受注"), (foo.Month1, foo.Detail, foo.Note!.DisplayName));
+        Assert.Null(foo.NameKey); // プールの日本語名は経路ごと
+        Assert.Equal(["WEB03 → w3wp.exe → Foo", "WEB01 → w3wp.exe → Foo"], foo.Children.Select(p => p.Label));
+        Assert.Equal("machine:WEB01\nexe:w3wp.exe\napp:Foo", foo.Children[1].NameKey);
+        Assert.Equal([Sato.Account], foo.PathAssignees!.Select(a => a.Account)); // 上の段（端末）の担当者も含む
 
         var hanbai = view[1];
         Assert.Equal((6, "販売管理", ConnectionTreeKeys.AppKeyOf("販売.exe")), (hanbai.Month1, hanbai.Note!.DisplayName, hanbai.NameKey));
         Assert.Null(hanbai.NoteKey); // アプリの行にはメモ・担当者を設定しない
-        Assert.Equal("DB Link 基幹（DB01）経由", hanbai.Children[0].Detail);
-        // 端末の行は端末別の最下段と同じキー。アプリ単位の日本語名は端末の行では設定しない
+        Assert.Equal(["DB01 → ORACLE.EXE → DB Link 基幹 → PC9 → 販売.exe", "WEB01 → 販売.exe", "WEB02 → 販売.exe"],
+            hanbai.Children.Select(p => p.Label));
+        // 経路は端末別の最下段と同じキー。アプリ単位の日本語名は経路では設定しない
         var web02 = hanbai.Children[2];
         Assert.Equal(("machine:WEB02\nexe:販売.exe", null, "メモ"), (web02.NoteKey, web02.NameKey, web02.Note!.Memo));
         Assert.Null(web02.Note.DisplayName);
-        // w3wp.exe はアプリ単位の名前を付けず、プールの下の端末で設定する
-        Assert.Null(view[0].NameKey);
-        Assert.Null(view[0].Children[0].NameKey);
-        Assert.Equal("machine:WEB03\nexe:w3wp.exe\napp:Foo", view[0].Children[0].Children[0].NameKey);
-        Assert.Equal(9, view[0].Month1);
+        Assert.Equal([Yamada.Account], hanbai.PathAssignees!.Select(a => a.Account));
+    }
+
+    [Fact]
+    public void アプリ別でプールに分かれない行はプール不明にまとめる()
+    {
+        ConnectionCountNode[] tree =
+        [
+            Counted("machine", "WEB01", 4, Counted("exe", "w3wp.exe", 4, Counted("app", "Foo", 3), Counted("other", "(プール不明)", 1))),
+            Counted("machine", "WEB02", 2, Counted("exe", "w3wp.exe", 2)),
+            Counted("machine", "PC1", 1, Counted("exe", "JDBC Thin Client", 1)),
+            Counted("machine", "PC2", 1, Counted("exe", "JDBC Thin Client", 1)),
+        ];
+        var notes = new Dictionary<string, NodeNoteDto>();
+        var view = ReportEndpoints.ToAppView(ConnectionTreeKeys.Apply(tree, notes), notes);
+        Assert.Equal(["Foo(WEB01 → w3wp.exe → Foo)", "JDBC Thin Client(PC1 → JDBC Thin Client,PC2 → JDBC Thin Client)",
+                "w3wp.exe (プール不明)(WEB02 → w3wp.exe,WEB01 → w3wp.exe → (プール不明))"],
+            view.Select(v => $"{v.Label}({string.Join(",", v.Children.Select(c => c.Label))})"));
+        Assert.Equal("other", view[2].Kind);
     }
 
     [Fact]
